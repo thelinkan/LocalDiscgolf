@@ -39,6 +39,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import nu.linkan.localdiscgolf.data.local.DatabaseProvider
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
@@ -205,7 +209,15 @@ fun PlayersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Spelare") }
+                title = { Text("Spelare åäö") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
@@ -281,7 +293,15 @@ fun CoursesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Banor") }
+                title = { Text("Banor") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
@@ -397,7 +417,17 @@ fun PlaceholderScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(title) })
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
         }
     ) { innerPadding ->
         Column(

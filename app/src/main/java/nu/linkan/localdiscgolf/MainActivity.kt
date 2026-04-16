@@ -56,6 +56,7 @@ import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 import nu.linkan.localdiscgolf.ui.theme.LocalDiscgolfTheme
+import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 
 class MainActivity : ComponentActivity() {
 
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
         val playerDao = db.playerDao()
         val courseDao = db.courseDao()
         val holeDao = db.holeDao()
+        val layoutDao = db.layoutDao()
 
         setContent {
             LocalDiscgolfTheme {
@@ -75,6 +77,7 @@ class MainActivity : ComponentActivity() {
                 var players by remember { mutableStateOf<List<PlayerEntity>>(emptyList()) }
                 var courses by remember { mutableStateOf<List<CourseEntity>>(emptyList()) }
                 val holesByCourse = remember { mutableStateMapOf<Long, List<HoleEntity>>() }
+                val layoutsByCourse = remember { mutableStateMapOf<Long, List<LayoutEntity>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -92,6 +95,7 @@ class MainActivity : ComponentActivity() {
                     players = players,
                     courses = courses,
                     holesByCourse = holesByCourse,
+                    layoutsByCourse = layoutsByCourse,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -158,6 +162,27 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         }
+                    },
+                    observeCourseLayouts = { courseId ->
+                        lifecycleScope.launch {
+                            layoutDao.observeActiveLayoutsForCourse(courseId).collectLatest { layouts ->
+                                layoutsByCourse[courseId] = layouts
+                            }
+                        }
+                    },
+                    onAddLayout = { courseId, name, description ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            layoutDao.insert(
+                                LayoutEntity(
+                                    courseId = courseId,
+                                    name = name,
+                                    description = description,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
                     }
                 )
             }
@@ -171,12 +196,15 @@ fun AppNavHost(
     players: List<PlayerEntity>,
     courses: List<CourseEntity>,
     holesByCourse: Map<Long, List<HoleEntity>>,
+    layoutsByCourse: Map<Long, List<LayoutEntity>>,
     onAddPlayer: (String) -> Unit,
     onAddCourse: (String) -> Unit,
     observeCourseHoles: (Long) -> Unit,
     onAddHole: (Long, Int, String?, Int, Int, String?) -> Unit,
-    onUpdateHole: (Long, Long, Int, String?, Int, Int, String?, Boolean, Long) -> Unit
-) {
+    onUpdateHole: (Long, Long, Int, String?, Int, Int, String?, Boolean, Long) -> Unit,
+    observeCourseLayouts: (Long) -> Unit,
+    onAddLayout: (Long, String, String?) -> Unit
+){
     NavHost(
         navController = navController,
         startDestination = "start"
@@ -217,15 +245,18 @@ fun AppNavHost(
             val courseId = backStackEntry.arguments?.getLong("courseId") ?: return@composable
             val course = courses.firstOrNull { it.id == courseId }
             val holes = holesByCourse[courseId] ?: emptyList()
+            val layouts = layoutsByCourse[courseId] ?: emptyList()
 
             LaunchedEffect(courseId) {
                 observeCourseHoles(courseId)
+                observeCourseLayouts(courseId)
             }
 
             if (course != null) {
                 CourseDetailScreen(
                     course = course,
                     holes = holes,
+                    layouts = layouts,
                     onBack = { navController.popBackStack() },
                     onAddHole = { holeNumber, name, lengthMeters, parValue, notes ->
                         onAddHole(courseId, holeNumber, name, lengthMeters, parValue, notes)
@@ -242,9 +273,30 @@ fun AppNavHost(
                             hole.isActive,
                             hole.createdAt
                         )
+                    },
+                    onAddLayout = { name, description ->
+                        onAddLayout(courseId, name, description)
+                    },
+                    onLayoutClick = { layoutId ->
+                        navController.navigate("layout/$layoutId")
                     }
                 )
             }
+        }
+
+        composable(
+            route = "layout/{layoutId}",
+            arguments = listOf(
+                navArgument("layoutId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val layoutId = backStackEntry.arguments?.getLong("layoutId") ?: return@composable
+
+            PlaceholderScreen(
+                title = "Layout",
+                text = "Layout $layoutId\nHär lägger vi snart till vilka hål som ingår.",
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable("new_round_placeholder") {
@@ -507,11 +559,15 @@ fun CourseListContent(
 fun CourseDetailScreen(
     course: CourseEntity,
     holes: List<HoleEntity>,
+    layouts: List<LayoutEntity>,
     onBack: () -> Unit,
     onAddHole: (Int, String?, Int, Int, String?) -> Unit,
-    onUpdateHole: (HoleEntity) -> Unit
+    onUpdateHole: (HoleEntity) -> Unit,
+    onAddLayout: (String, String?) -> Unit,
+    onLayoutClick: (Long) -> Unit
 ) {
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddHoleDialog by remember { mutableStateOf(false) }
+    var showAddLayoutDialog by remember { mutableStateOf(false) }
     var holeToEdit by remember { mutableStateOf<HoleEntity?>(null) }
 
     Scaffold(
@@ -527,52 +583,116 @@ fun CourseDetailScreen(
                     }
                 }
             )
-        },
-        bottomBar = {
-            Button(
-                onClick = { showAddDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-            ) {
-                Text("Nytt hål")
-            }
         }
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Antal hål: ${holes.size}",
-                style = MaterialTheme.typography.bodyLarge
-            )
+            item {
+                Text(
+                    text = "Hål",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(holes) { hole ->
-                    HoleRow(
-                        hole = hole,
-                        onEditClick = { holeToEdit = hole }
-                    )
-                    HorizontalDivider()
+            item {
+                Button(
+                    onClick = { showAddHoleDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Nytt hål")
                 }
+            }
+
+            item {
+                Text(
+                    text = "Antal hål: ${holes.size}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            items(holes) { hole ->
+                HoleRow(
+                    hole = hole,
+                    onEditClick = { holeToEdit = hole }
+                )
+                HorizontalDivider()
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            item {
+                Text(
+                    text = "Layouter",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
+
+            item {
+                Button(
+                    onClick = { showAddLayoutDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ny layout")
+                }
+            }
+
+            item {
+                Text(
+                    text = "Antal layouter: ${layouts.size}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            items(layouts) { layout ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onLayoutClick(layout.id) }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Text(
+                        text = layout.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (!layout.description.isNullOrBlank()) {
+                        Text(
+                            text = layout.description,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                HorizontalDivider()
+            }
+
+            item {
+                Spacer(modifier = Modifier.navigationBarsPadding())
             }
         }
     }
 
-    if (showAddDialog) {
+    if (showAddHoleDialog) {
         AddHoleDialog(
-            onDismiss = { showAddDialog = false },
+            onDismiss = { showAddHoleDialog = false },
             onConfirm = { holeNumber, name, lengthMeters, parValue, notes ->
                 onAddHole(holeNumber, name, lengthMeters, parValue, notes)
-                showAddDialog = false
+                showAddHoleDialog = false
+            }
+        )
+    }
+
+    if (showAddLayoutDialog) {
+        AddLayoutDialog(
+            onDismiss = { showAddLayoutDialog = false },
+            onConfirm = { name, description ->
+                onAddLayout(name, description)
+                showAddLayoutDialog = false
             }
         )
     }
@@ -587,6 +707,55 @@ fun CourseDetailScreen(
             }
         )
     }
+}
+
+@Composable
+fun AddLayoutDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String?) -> Unit
+) {
+    var nameText by remember { mutableStateOf("") }
+    var descriptionText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ny layout") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it },
+                    label = { Text("Layoutnamn") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = descriptionText,
+                    onValueChange = { descriptionText = it },
+                    label = { Text("Beskrivning (valfritt)") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val trimmedName = nameText.trim()
+                    if (trimmedName.isNotEmpty()) {
+                        onConfirm(
+                            trimmedName,
+                            descriptionText.trim().ifBlank { null }
+                        )
+                    }
+                }
+            ) {
+                Text("Spara")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Avbryt")
+            }
+        }
+    )
 }
 
 @Composable

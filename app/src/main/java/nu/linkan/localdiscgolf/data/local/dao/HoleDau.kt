@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 
@@ -12,6 +13,9 @@ interface HoleDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(hole: HoleEntity): Long
+
+    @Update
+    suspend fun update(hole: HoleEntity)
 
     @Query("""
         SELECT * 

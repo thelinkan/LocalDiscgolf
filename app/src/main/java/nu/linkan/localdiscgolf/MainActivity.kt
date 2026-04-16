@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -138,6 +139,25 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         }
+                    },
+                    onUpdateHole = { holeId, courseId, holeNumber, name, lengthMeters, parValue, notes, isActive, createdAt ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            holeDao.update(
+                                HoleEntity(
+                                    id = holeId,
+                                    courseId = courseId,
+                                    holeNumber = holeNumber,
+                                    name = name,
+                                    lengthMeters = lengthMeters,
+                                    parValue = parValue,
+                                    notes = notes,
+                                    isActive = isActive,
+                                    createdAt = createdAt,
+                                    updatedAt = now
+                                )
+                            )
+                        }
                     }
                 )
             }
@@ -154,7 +174,8 @@ fun AppNavHost(
     onAddPlayer: (String) -> Unit,
     onAddCourse: (String) -> Unit,
     observeCourseHoles: (Long) -> Unit,
-    onAddHole: (Long, Int, String?, Int, Int, String?) -> Unit
+    onAddHole: (Long, Int, String?, Int, Int, String?) -> Unit,
+    onUpdateHole: (Long, Long, Int, String?, Int, Int, String?, Boolean, Long) -> Unit
 ) {
     NavHost(
         navController = navController,
@@ -208,6 +229,19 @@ fun AppNavHost(
                     onBack = { navController.popBackStack() },
                     onAddHole = { holeNumber, name, lengthMeters, parValue, notes ->
                         onAddHole(courseId, holeNumber, name, lengthMeters, parValue, notes)
+                    },
+                    onUpdateHole = { hole ->
+                        onUpdateHole(
+                            hole.id,
+                            hole.courseId,
+                            hole.holeNumber,
+                            hole.name,
+                            hole.lengthMeters,
+                            hole.parValue,
+                            hole.notes,
+                            hole.isActive,
+                            hole.createdAt
+                        )
                     }
                 )
             }
@@ -474,9 +508,11 @@ fun CourseDetailScreen(
     course: CourseEntity,
     holes: List<HoleEntity>,
     onBack: () -> Unit,
-    onAddHole: (Int, String?, Int, Int, String?) -> Unit
+    onAddHole: (Int, String?, Int, Int, String?) -> Unit,
+    onUpdateHole: (HoleEntity) -> Unit
 ) {
-    var showDialog by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var holeToEdit by remember { mutableStateOf<HoleEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -494,7 +530,7 @@ fun CourseDetailScreen(
         },
         bottomBar = {
             Button(
-                onClick = { showDialog = true },
+                onClick = { showAddDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
@@ -521,36 +557,74 @@ fun CourseDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(holes) { hole ->
-                    Column {
-                        Text(
-                            text = "Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "Längd: ${hole.lengthMeters} m, Par: ${hole.parValue}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (!hole.notes.isNullOrBlank()) {
-                            Text(
-                                text = hole.notes,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
-                    }
+                    HoleRow(
+                        hole = hole,
+                        onEditClick = { holeToEdit = hole }
+                    )
+                    HorizontalDivider()
                 }
             }
         }
     }
 
-    if (showDialog) {
+    if (showAddDialog) {
         AddHoleDialog(
-            onDismiss = { showDialog = false },
+            onDismiss = { showAddDialog = false },
             onConfirm = { holeNumber, name, lengthMeters, parValue, notes ->
                 onAddHole(holeNumber, name, lengthMeters, parValue, notes)
-                showDialog = false
+                showAddDialog = false
             }
         )
+    }
+
+    holeToEdit?.let { hole ->
+        EditHoleDialog(
+            hole = hole,
+            onDismiss = { holeToEdit = null },
+            onConfirm = { updatedHole ->
+                onUpdateHole(updatedHole)
+                holeToEdit = null
+            }
+        )
+    }
+}
+
+@Composable
+fun HoleRow(
+    hole: HoleEntity,
+    onEditClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = "Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Längd: ${hole.lengthMeters} m, Par: ${hole.parValue}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (!hole.notes.isNullOrBlank()) {
+                Text(
+                    text = hole.notes,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        IconButton(onClick = onEditClick) {
+            Icon(
+                imageVector = Icons.Filled.Edit,
+                contentDescription = "Redigera hål"
+            )
+        }
     }
 }
 
@@ -655,6 +729,85 @@ fun AddHoleDialog(
                             lengthMeters,
                             parValue,
                             notesText.trim().ifBlank { null }
+                        )
+                    }
+                }
+            ) {
+                Text("Spara")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Avbryt")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditHoleDialog(
+    hole: HoleEntity,
+    onDismiss: () -> Unit,
+    onConfirm: (HoleEntity) -> Unit
+) {
+    var holeNumberText by remember(hole.id) { mutableStateOf(hole.holeNumber.toString()) }
+    var nameText by remember(hole.id) { mutableStateOf(hole.name ?: "") }
+    var lengthText by remember(hole.id) { mutableStateOf(hole.lengthMeters.toString()) }
+    var parText by remember(hole.id) { mutableStateOf(hole.parValue.toString()) }
+    var notesText by remember(hole.id) { mutableStateOf(hole.notes ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Redigera hål") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = holeNumberText,
+                    onValueChange = { holeNumberText = it },
+                    label = { Text("Hålnummer") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it },
+                    label = { Text("Namn (valfritt)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = lengthText,
+                    onValueChange = { lengthText = it },
+                    label = { Text("Längd i meter") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = parText,
+                    onValueChange = { parText = it },
+                    label = { Text("Par") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Anteckning (valfritt)") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val holeNumber = holeNumberText.trim().toIntOrNull()
+                    val lengthMeters = lengthText.trim().toIntOrNull()
+                    val parValue = parText.trim().toIntOrNull()
+
+                    if (holeNumber != null && lengthMeters != null && parValue != null) {
+                        onConfirm(
+                            hole.copy(
+                                holeNumber = holeNumber,
+                                name = nameText.trim().ifBlank { null },
+                                lengthMeters = lengthMeters,
+                                parValue = parValue,
+                                notes = notesText.trim().ifBlank { null }
+                            )
                         )
                     }
                 }

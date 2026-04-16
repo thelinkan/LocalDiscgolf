@@ -8,16 +8,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -27,24 +34,25 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import nu.linkan.localdiscgolf.data.local.DatabaseProvider
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 import nu.linkan.localdiscgolf.ui.theme.LocalDiscgolfTheme
 
@@ -57,6 +65,7 @@ class MainActivity : ComponentActivity() {
         val db = DatabaseProvider.getDatabase(this)
         val playerDao = db.playerDao()
         val courseDao = db.courseDao()
+        val holeDao = db.holeDao()
 
         setContent {
             LocalDiscgolfTheme {
@@ -64,13 +73,16 @@ class MainActivity : ComponentActivity() {
 
                 var players by remember { mutableStateOf<List<PlayerEntity>>(emptyList()) }
                 var courses by remember { mutableStateOf<List<CourseEntity>>(emptyList()) }
+                val holesByCourse = remember { mutableStateMapOf<Long, List<HoleEntity>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
                         playerDao.observeActivePlayers().collectLatest { players = it }
                     }
                     launch {
-                        courseDao.observeActiveCourses().collectLatest { courses = it }
+                        courseDao.observeActiveCourses().collectLatest { courseList ->
+                            courses = courseList
+                        }
                     }
                 }
 
@@ -78,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     navController = navController,
                     players = players,
                     courses = courses,
+                    holesByCourse = holesByCourse,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -101,6 +114,30 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         }
+                    },
+                    observeCourseHoles = { courseId ->
+                        lifecycleScope.launch {
+                            holeDao.observeActiveHolesForCourse(courseId).collectLatest { holes ->
+                                holesByCourse[courseId] = holes
+                            }
+                        }
+                    },
+                    onAddHole = { courseId, holeNumber, name, lengthMeters, parValue, notes ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            holeDao.insert(
+                                HoleEntity(
+                                    courseId = courseId,
+                                    holeNumber = holeNumber,
+                                    name = name,
+                                    lengthMeters = lengthMeters,
+                                    parValue = parValue,
+                                    notes = notes,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
                     }
                 )
             }
@@ -113,8 +150,11 @@ fun AppNavHost(
     navController: NavHostController,
     players: List<PlayerEntity>,
     courses: List<CourseEntity>,
+    holesByCourse: Map<Long, List<HoleEntity>>,
     onAddPlayer: (String) -> Unit,
-    onAddCourse: (String) -> Unit
+    onAddCourse: (String) -> Unit,
+    observeCourseHoles: (Long) -> Unit,
+    onAddHole: (Long, Int, String?, Int, Int, String?) -> Unit
 ) {
     NavHost(
         navController = navController,
@@ -140,8 +180,37 @@ fun AppNavHost(
             CoursesScreen(
                 courses = courses,
                 onBack = { navController.popBackStack() },
-                onAddCourse = onAddCourse
+                onAddCourse = onAddCourse,
+                onCourseClick = { courseId ->
+                    navController.navigate("course/$courseId")
+                }
             )
+        }
+
+        composable(
+            route = "course/{courseId}",
+            arguments = listOf(
+                navArgument("courseId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val courseId = backStackEntry.arguments?.getLong("courseId") ?: return@composable
+            val course = courses.firstOrNull { it.id == courseId }
+            val holes = holesByCourse[courseId] ?: emptyList()
+
+            LaunchedEffect(courseId) {
+                observeCourseHoles(courseId)
+            }
+
+            if (course != null) {
+                CourseDetailScreen(
+                    course = course,
+                    holes = holes,
+                    onBack = { navController.popBackStack() },
+                    onAddHole = { holeNumber, name, lengthMeters, parValue, notes ->
+                        onAddHole(courseId, holeNumber, name, lengthMeters, parValue, notes)
+                    }
+                )
+            }
         }
 
         composable("new_round_placeholder") {
@@ -209,32 +278,47 @@ fun PlayersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Spelare åäö") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Tillbaka"
-                        )
-                    }
-                }
+                title = { Text("Spelare") }
             )
-        },
-        bottomBar = {
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Tillbaka")
+            }
+
+            Text(
+                text = "Antal spelare: ${players.size}",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Ny spelare")
             }
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(players) { player ->
+                    Text(
+                        text = player.name,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
         }
-    ) { innerPadding ->
-        PlayerListContent(
-            players = players,
-            paddingValues = innerPadding
-        )
     }
 
     if (showDialog) {
@@ -286,39 +370,56 @@ fun PlayerListContent(
 fun CoursesScreen(
     courses: List<CourseEntity>,
     onBack: () -> Unit,
-    onAddCourse: (String) -> Unit
+    onAddCourse: (String) -> Unit,
+    onCourseClick: (Long) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Banor") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Tillbaka"
-                        )
-                    }
-                }
+                title = { Text("Banor") }
             )
-        },
-        bottomBar = {
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Tillbaka")
+            }
+
+            Text(
+                text = "Antal banor: ${courses.size}",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Ny bana")
             }
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(courses) { course ->
+                    Text(
+                        text = course.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.clickable { onCourseClick(course.id) }
+                    )
+                }
+            }
         }
-    ) { innerPadding ->
-        CourseListContent(
-            courses = courses,
-            paddingValues = innerPadding
-        )
     }
 
     if (showDialog) {
@@ -337,7 +438,8 @@ fun CoursesScreen(
 @Composable
 fun CourseListContent(
     courses: List<CourseEntity>,
-    paddingValues: PaddingValues
+    paddingValues: PaddingValues,
+    onCourseClick: (Long) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -359,10 +461,96 @@ fun CourseListContent(
                 Text(
                     text = course.name,
                     style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.clickable { }
+                    modifier = Modifier.clickable { onCourseClick(course.id) }
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CourseDetailScreen(
+    course: CourseEntity,
+    holes: List<HoleEntity>,
+    onBack: () -> Unit,
+    onAddHole: (Int, String?, Int, Int, String?) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(course.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Button(
+                onClick = { showDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                Text("Nytt hål")
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = "Antal hål: ${holes.size}",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(holes) { hole ->
+                    Column {
+                        Text(
+                            text = "Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Längd: ${hole.lengthMeters} m, Par: ${hole.parValue}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (!hole.notes.isNullOrBlank()) {
+                            Text(
+                                text = hole.notes,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDialog) {
+        AddHoleDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = { holeNumber, name, lengthMeters, parValue, notes ->
+                onAddHole(holeNumber, name, lengthMeters, parValue, notes)
+                showDialog = false
+            }
+        )
     }
 }
 
@@ -377,9 +565,7 @@ fun NameInputDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(title)
-        },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -394,6 +580,82 @@ fun NameInputDialog(
                     val trimmed = text.trim()
                     if (trimmed.isNotEmpty()) {
                         onConfirm(trimmed)
+                    }
+                }
+            ) {
+                Text("Spara")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Avbryt")
+            }
+        }
+    )
+}
+
+@Composable
+fun AddHoleDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Int, String?, Int, Int, String?) -> Unit
+) {
+    var holeNumberText by remember { mutableStateOf("") }
+    var nameText by remember { mutableStateOf("") }
+    var lengthText by remember { mutableStateOf("") }
+    var parText by remember { mutableStateOf("") }
+    var notesText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nytt hål") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = holeNumberText,
+                    onValueChange = { holeNumberText = it },
+                    label = { Text("Hålnummer") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it },
+                    label = { Text("Namn (valfritt)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = lengthText,
+                    onValueChange = { lengthText = it },
+                    label = { Text("Längd i meter") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = parText,
+                    onValueChange = { parText = it },
+                    label = { Text("Par") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Anteckning (valfritt)") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val holeNumber = holeNumberText.trim().toIntOrNull()
+                    val lengthMeters = lengthText.trim().toIntOrNull()
+                    val parValue = parText.trim().toIntOrNull()
+
+                    if (holeNumber != null && lengthMeters != null && parValue != null) {
+                        onConfirm(
+                            holeNumber,
+                            nameText.trim().ifBlank { null },
+                            lengthMeters,
+                            parValue,
+                            notesText.trim().ifBlank { null }
+                        )
                     }
                 }
             ) {

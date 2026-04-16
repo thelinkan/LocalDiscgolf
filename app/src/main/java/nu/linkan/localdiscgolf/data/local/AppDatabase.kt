@@ -9,6 +9,7 @@ import nu.linkan.localdiscgolf.data.local.dao.PlayerDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
+import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 
 @Database(
@@ -16,9 +17,10 @@ import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
         PlayerEntity::class,
         CourseEntity::class,
         HoleEntity::class,
-        LayoutEntity::class
+        LayoutEntity::class,
+        LayoutHoleEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

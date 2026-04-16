@@ -57,7 +57,8 @@ import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 import nu.linkan.localdiscgolf.ui.theme.LocalDiscgolfTheme
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
-
+import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
+import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
                 var courses by remember { mutableStateOf<List<CourseEntity>>(emptyList()) }
                 val holesByCourse = remember { mutableStateMapOf<Long, List<HoleEntity>>() }
                 val layoutsByCourse = remember { mutableStateMapOf<Long, List<LayoutEntity>>() }
+                val layoutHolesByLayout = remember { mutableStateMapOf<Long, List<LayoutHoleWithHole>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -96,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     courses = courses,
                     holesByCourse = holesByCourse,
                     layoutsByCourse = layoutsByCourse,
+                    layoutHolesByLayout = layoutHolesByLayout,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -183,6 +186,25 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         }
+                    },
+                    observeLayoutHoles = { layoutId ->
+                        lifecycleScope.launch {
+                            layoutDao.observeLayoutHoles(layoutId).collectLatest { layoutHoles ->
+                                layoutHolesByLayout[layoutId] = layoutHoles
+                            }
+                        }
+                    },
+                    onAddHoleToLayout = { layoutId, holeId ->
+                        lifecycleScope.launch {
+                            val nextSequence = layoutDao.getMaxSequenceNumber(layoutId) + 1
+                            layoutDao.insertLayoutHole(
+                                LayoutHoleEntity(
+                                    layoutId = layoutId,
+                                    sequenceNumber = nextSequence,
+                                    holeId = holeId
+                                )
+                            )
+                        }
                     }
                 )
             }
@@ -197,13 +219,16 @@ fun AppNavHost(
     courses: List<CourseEntity>,
     holesByCourse: Map<Long, List<HoleEntity>>,
     layoutsByCourse: Map<Long, List<LayoutEntity>>,
+    layoutHolesByLayout: Map<Long, List<LayoutHoleWithHole>>,
     onAddPlayer: (String) -> Unit,
     onAddCourse: (String) -> Unit,
     observeCourseHoles: (Long) -> Unit,
     onAddHole: (Long, Int, String?, Int, Int, String?) -> Unit,
     onUpdateHole: (Long, Long, Int, String?, Int, Int, String?, Boolean, Long) -> Unit,
     observeCourseLayouts: (Long) -> Unit,
-    onAddLayout: (Long, String, String?) -> Unit
+    onAddLayout: (Long, String, String?) -> Unit,
+    observeLayoutHoles: (Long) -> Unit,
+    onAddHoleToLayout: (Long, Long) -> Unit
 ){
     NavHost(
         navController = navController,
@@ -291,12 +316,32 @@ fun AppNavHost(
             )
         ) { backStackEntry ->
             val layoutId = backStackEntry.arguments?.getLong("layoutId") ?: return@composable
+            val layoutHoles = layoutHolesByLayout[layoutId] ?: emptyList()
 
-            PlaceholderScreen(
-                title = "Layout",
-                text = "Layout $layoutId\nHär lägger vi snart till vilka hål som ingår.",
-                onBack = { navController.popBackStack() }
-            )
+            LaunchedEffect(layoutId) {
+                observeLayoutHoles(layoutId)
+            }
+
+            val allLayouts = layoutsByCourse.values.flatten()
+            val currentLayout = allLayouts.firstOrNull { it.id == layoutId }
+
+            if (currentLayout != null) {
+                val courseHoles = holesByCourse[currentLayout.courseId] ?: emptyList()
+
+                LaunchedEffect(currentLayout.courseId) {
+                    observeCourseHoles(currentLayout.courseId)
+                }
+
+                LayoutDetailScreen(
+                    layout = currentLayout,
+                    availableHoles = courseHoles,
+                    layoutHoles = layoutHoles,
+                    onBack = { navController.popBackStack() },
+                    onAddHoleToLayout = { holeId ->
+                        onAddHoleToLayout(layoutId, holeId)
+                    }
+                )
+            }
         }
 
         composable("new_round_placeholder") {
@@ -746,6 +791,149 @@ fun AddLayoutDialog(
                         )
                     }
                 }
+            ) {
+                Text("Spara")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Avbryt")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LayoutDetailScreen(
+    layout: LayoutEntity,
+    availableHoles: List<HoleEntity>,
+    layoutHoles: List<LayoutHoleWithHole>,
+    onBack: () -> Unit,
+    onAddHoleToLayout: (Long) -> Unit
+) {
+    var showAddHoleDialog by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(layout.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Button(
+                onClick = { showAddHoleDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                Text("Lägg till hål")
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = "Antal hål i layout: ${layoutHoles.size}",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(layoutHoles) { item ->
+                    Column {
+                        Text(
+                            text = "${item.sequenceNumber}. Hål ${item.holeNumber}" +
+                                    (item.holeName?.let { " - $it" } ?: ""),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Längd: ${item.lengthMeters} m, Par: ${item.parValue}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddHoleDialog) {
+        AddHoleToLayoutDialog(
+            availableHoles = availableHoles,
+            alreadyIncludedHoleIds = layoutHoles.map { it.holeId }.toSet(),
+            onDismiss = { showAddHoleDialog = false },
+            onConfirm = { holeId ->
+                onAddHoleToLayout(holeId)
+                showAddHoleDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun AddHoleToLayoutDialog(
+    availableHoles: List<HoleEntity>,
+    alreadyIncludedHoleIds: Set<Long>,
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit
+) {
+    val selectableHoles = availableHoles.filter { it.id !in alreadyIncludedHoleIds }
+    var selectedHoleId by remember { mutableStateOf<Long?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Lägg till hål i layout") },
+        text = {
+            if (selectableHoles.isEmpty()) {
+                Text("Alla hål på banan finns redan i layouten.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    selectableHoles.forEach { hole ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedHoleId = hole.id }
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = if (selectedHoleId == hole.id) "●" else "○",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = "Hål ${hole.holeNumber}" +
+                                        (hole.name?.let { " - $it" } ?: "") +
+                                        " (${hole.lengthMeters} m, par ${hole.parValue})",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    selectedHoleId?.let(onConfirm)
+                },
+                enabled = selectedHoleId != null && selectableHoles.isNotEmpty()
             ) {
                 Text("Spara")
             }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
@@ -55,4 +56,37 @@ interface LayoutDao {
         WHERE layout_id = :layoutId
     """)
     suspend fun getMaxSequenceNumber(layoutId: Long): Int
+
+    @Query("""
+        DELETE FROM layout_hole
+        WHERE id = :layoutHoleId
+    """)
+    suspend fun deleteLayoutHoleById(layoutHoleId: Long)
+
+    @Query("""
+        UPDATE layout_hole
+        SET sequence_number = :newSequenceNumber
+        WHERE id = :layoutHoleId
+    """)
+    suspend fun updateLayoutHoleSequence(layoutHoleId: Long, newSequenceNumber: Int)
+
+    @Query("""
+        UPDATE layout_hole
+        SET sequence_number = sequence_number - 1
+        WHERE layout_id = :layoutId
+          AND sequence_number > :deletedSequenceNumber
+    """)
+    suspend fun closeGapAfterDelete(layoutId: Long, deletedSequenceNumber: Int)
+
+    @Transaction
+    suspend fun swapLayoutHoleSequences(
+        firstLayoutHoleId: Long,
+        firstSequence: Int,
+        secondLayoutHoleId: Long,
+        secondSequence: Int
+    ) {
+        updateLayoutHoleSequence(firstLayoutHoleId, -1)
+        updateLayoutHoleSequence(secondLayoutHoleId, firstSequence)
+        updateLayoutHoleSequence(firstLayoutHoleId, secondSequence)
+    }
 }

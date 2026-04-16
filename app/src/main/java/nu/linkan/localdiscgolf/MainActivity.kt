@@ -20,6 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -205,6 +208,42 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         }
+                    },
+                    onRemoveHoleFromLayout = { layoutHoleId, deletedSequenceNumber, layoutId ->
+                        lifecycleScope.launch {
+                            layoutDao.deleteLayoutHoleById(layoutHoleId)
+                            layoutDao.closeGapAfterDelete(layoutId, deletedSequenceNumber)
+                        }
+                    },
+                    onMoveHoleUpInLayout = { layoutHoles, index ->
+                        lifecycleScope.launch {
+                            if (index > 0) {
+                                val current = layoutHoles[index]
+                                val previous = layoutHoles[index - 1]
+
+                                layoutDao.swapLayoutHoleSequences(
+                                    firstLayoutHoleId = current.layoutHoleId,
+                                    firstSequence = current.sequenceNumber,
+                                    secondLayoutHoleId = previous.layoutHoleId,
+                                    secondSequence = previous.sequenceNumber
+                                )
+                            }
+                        }
+                    },
+                    onMoveHoleDownInLayout = { layoutHoles, index ->
+                        lifecycleScope.launch {
+                            if (index < layoutHoles.lastIndex) {
+                                val current = layoutHoles[index]
+                                val next = layoutHoles[index + 1]
+
+                                layoutDao.swapLayoutHoleSequences(
+                                    firstLayoutHoleId = current.layoutHoleId,
+                                    firstSequence = current.sequenceNumber,
+                                    secondLayoutHoleId = next.layoutHoleId,
+                                    secondSequence = next.sequenceNumber
+                                )
+                            }
+                        }
                     }
                 )
             }
@@ -228,7 +267,10 @@ fun AppNavHost(
     observeCourseLayouts: (Long) -> Unit,
     onAddLayout: (Long, String, String?) -> Unit,
     observeLayoutHoles: (Long) -> Unit,
-    onAddHoleToLayout: (Long, Long) -> Unit
+    onAddHoleToLayout: (Long, Long) -> Unit,
+    onRemoveHoleFromLayout: (Long, Int, Long) -> Unit,
+    onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
+    onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit
 ){
     NavHost(
         navController = navController,
@@ -339,6 +381,15 @@ fun AppNavHost(
                     onBack = { navController.popBackStack() },
                     onAddHoleToLayout = { holeId ->
                         onAddHoleToLayout(layoutId, holeId)
+                    },
+                    onRemoveHoleFromLayout = { layoutHoleId, sequenceNumber ->
+                        onRemoveHoleFromLayout(layoutHoleId, sequenceNumber, layoutId)
+                    },
+                    onMoveHoleUp = { index ->
+                        onMoveHoleUpInLayout(layoutHoles, index)
+                    },
+                    onMoveHoleDown = { index ->
+                        onMoveHoleDownInLayout(layoutHoles, index)
                     }
                 )
             }
@@ -810,7 +861,10 @@ fun LayoutDetailScreen(
     availableHoles: List<HoleEntity>,
     layoutHoles: List<LayoutHoleWithHole>,
     onBack: () -> Unit,
-    onAddHoleToLayout: (Long) -> Unit
+    onAddHoleToLayout: (Long) -> Unit,
+    onRemoveHoleFromLayout: (Long, Int) -> Unit,
+    onMoveHoleUp: (Int) -> Unit,
+    onMoveHoleDown: (Int) -> Unit
 ) {
     var showAddHoleDialog by remember { mutableStateOf(false) }
 
@@ -856,19 +910,20 @@ fun LayoutDetailScreen(
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(layoutHoles) { item ->
-                    Column {
-                        Text(
-                            text = "${item.sequenceNumber}. Hål ${item.holeNumber}" +
-                                    (item.holeName?.let { " - $it" } ?: ""),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "Längd: ${item.lengthMeters} m, Par: ${item.parValue}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
-                    }
+                items(layoutHoles.size) { index ->
+                    val item = layoutHoles[index]
+
+                    LayoutHoleRow(
+                        item = item,
+                        isFirst = index == 0,
+                        isLast = index == layoutHoles.lastIndex,
+                        onMoveUp = { onMoveHoleUp(index) },
+                        onMoveDown = { onMoveHoleDown(index) },
+                        onDelete = {
+                            onRemoveHoleFromLayout(item.layoutHoleId, item.sequenceNumber)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -884,6 +939,66 @@ fun LayoutDetailScreen(
                 showAddHoleDialog = false
             }
         )
+    }
+}
+
+@Composable
+fun LayoutHoleRow(
+    item: LayoutHoleWithHole,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = "${item.sequenceNumber}. Hål ${item.holeNumber}" +
+                        (item.holeName?.let { " - $it" } ?: ""),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Längd: ${item.lengthMeters} m, Par: ${item.parValue}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        Column {
+            IconButton(
+                onClick = onMoveUp,
+                enabled = !isFirst
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    contentDescription = "Flytta upp"
+                )
+            }
+
+            IconButton(
+                onClick = onMoveDown,
+                enabled = !isLast
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Flytta ner"
+                )
+            }
+        }
+
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = "Ta bort från layout"
+            )
+        }
     }
 }
 

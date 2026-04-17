@@ -75,6 +75,7 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
 import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity() {
                 val holeCountBySession = remember { mutableStateMapOf<Long, Int>() }
                 val roundSummaryRowsBySession = remember { mutableStateMapOf<Long, List<RoundSummaryHoleRow>>() }
                 val inProgressSessions = remember { mutableStateOf<List<InProgressSessionRow>>(emptyList()) }
+                val playerSessionsByPlayer = remember { mutableStateMapOf<Long, List<PlayerSessionRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -133,6 +135,7 @@ class MainActivity : ComponentActivity() {
                     holeCountBySession = holeCountBySession,
                     roundSummaryRowsBySession = roundSummaryRowsBySession,
                     inProgressSessions = inProgressSessions.value,
+                    playerSessionsByPlayer = playerSessionsByPlayer,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -327,6 +330,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    observePlayerSessions = { playerId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeSessionsForPlayer(playerId).collectLatest { rows ->
+                                playerSessionsByPlayer[playerId] = rows
+                            }
+                        }
+                    },
                     onUpdateThrowsForHole = { sessionPlayerHoleId, throwsCount ->
                         lifecycleScope.launch {
                             playSessionDao.updateThrowsForSessionPlayerHole(
@@ -390,6 +400,8 @@ fun AppNavHost(
     observeRoundSummaryRows: (Long) -> Unit,
     inProgressSessions: List<InProgressSessionRow>,
     onResumeRound: (Long, (Int) -> Unit) -> Unit,
+    playerSessionsByPlayer: Map<Long, List<PlayerSessionRow>>,
+    observePlayerSessions: (Long) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -408,7 +420,10 @@ fun AppNavHost(
             PlayersScreen(
                 players = players,
                 onBack = { navController.popBackStack() },
-                onAddPlayer = onAddPlayer
+                onAddPlayer = onAddPlayer,
+                onPlayerClick = { playerId ->
+                    navController.navigate("player/$playerId")
+                }
             )
         }
 
@@ -467,6 +482,29 @@ fun AppNavHost(
                     onLayoutClick = { layoutId ->
                         navController.navigate("layout/$layoutId")
                     }
+                )
+            }
+        }
+
+        composable(
+            route = "player/{playerId}",
+            arguments = listOf(
+                navArgument("playerId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val playerId = backStackEntry.arguments?.getLong("playerId") ?: return@composable
+            val player = players.firstOrNull { it.id == playerId }
+            val sessions = playerSessionsByPlayer[playerId] ?: emptyList()
+
+            LaunchedEffect(playerId) {
+                observePlayerSessions(playerId)
+            }
+
+            if (player != null) {
+                PlayerDetailScreen(
+                    player = player,
+                    sessions = sessions,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
@@ -676,7 +714,8 @@ fun StartScreen(
 fun PlayersScreen(
     players: List<PlayerEntity>,
     onBack: () -> Unit,
-    onAddPlayer: (String) -> Unit
+    onAddPlayer: (String) -> Unit,
+    onPlayerClick: (Long) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
@@ -719,7 +758,11 @@ fun PlayersScreen(
                 items(players) { player ->
                     Text(
                         text = player.name,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPlayerClick(player.id) }
+                            .padding(vertical = 6.dp)
                     )
                 }
             }
@@ -2113,6 +2156,82 @@ fun RoundPlayerThrowsRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun PlayerDetailScreen(
+    player: PlayerEntity,
+    sessions: List<PlayerSessionRow>,
+    onBack: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(player.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (sessions.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Inga rundor registrerade ännu.",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(sessions) { session ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = session.courseName +
+                                    (session.layoutName?.let { " - $it" } ?: ""),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Start: ${formatDateTime(session.startedAt)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (session.endedAt != null) {
+                            Text(
+                                text = "Slut: ${formatDateTime(session.endedAt)}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        Text(
+                            text = "Status: ${formatSessionStatus(session.status)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun PlaceholderScreen(
     title: String,
     text: String,
@@ -2141,6 +2260,14 @@ fun PlaceholderScreen(
         ) {
             Text(text, style = MaterialTheme.typography.bodyLarge)
         }
+    }
+}
+
+fun formatSessionStatus(status: String): String {
+    return when (status) {
+        "in_progress" -> "Pågår"
+        "completed" -> "Avslutad"
+        else -> status
     }
 }
 

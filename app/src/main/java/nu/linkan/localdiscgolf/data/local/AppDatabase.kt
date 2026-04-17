@@ -5,12 +5,15 @@ import androidx.room.RoomDatabase
 import nu.linkan.localdiscgolf.data.local.dao.CourseDao
 import nu.linkan.localdiscgolf.data.local.dao.HoleDao
 import nu.linkan.localdiscgolf.data.local.dao.LayoutDao
+import nu.linkan.localdiscgolf.data.local.dao.PlaySessionDao
 import nu.linkan.localdiscgolf.data.local.dao.PlayerDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
+import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
+import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 
 @Database(
     entities = [
@@ -18,9 +21,11 @@ import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
         CourseEntity::class,
         HoleEntity::class,
         LayoutEntity::class,
-        LayoutHoleEntity::class
+        LayoutHoleEntity::class,
+        PlaySessionEntity::class,
+        SessionPlayerEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,4 +33,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun courseDao(): CourseDao
     abstract fun holeDao(): HoleDao
     abstract fun layoutDao(): LayoutDao
+    abstract fun playSessionDao(): PlaySessionDao
 }

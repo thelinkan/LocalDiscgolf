@@ -62,6 +62,9 @@ import nu.linkan.localdiscgolf.ui.theme.LocalDiscgolfTheme
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
+import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
+import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +76,7 @@ class MainActivity : ComponentActivity() {
         val courseDao = db.courseDao()
         val holeDao = db.holeDao()
         val layoutDao = db.layoutDao()
+        val playSessionDao = db.playSessionDao()
 
         setContent {
             LocalDiscgolfTheme {
@@ -244,6 +248,32 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                    },
+                    onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+
+                            playSessionDao.createPlaySessionWithPlayers(
+                                playSession = PlaySessionEntity(
+                                    courseId = courseId,
+                                    startedAt = startedAt,
+                                    createdAt = now,
+                                    updatedAt = now
+                                ),
+                                sessionPlayers = selectedPlayerIds.mapIndexed { index, playerId ->
+                                    val player = players.firstOrNull { it.id == playerId }
+                                    SessionPlayerEntity(
+                                        playSessionId = 0,
+                                        playerId = playerId,
+                                        layoutId = selectedLayoutId,
+                                        displayName = player?.name,
+                                        startOrder = index + 1,
+                                        createdAt = now,
+                                        updatedAt = now
+                                    )
+                                }
+                            )
+                        }
                     }
                 )
             }
@@ -270,7 +300,8 @@ fun AppNavHost(
     onAddHoleToLayout: (Long, Long) -> Unit,
     onRemoveHoleFromLayout: (Long, Int, Long) -> Unit,
     onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
-    onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit
+    onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
+    onCreateRound: (Long, Long, List<Long>, Long) -> Unit
 ){
     NavHost(
         navController = navController,
@@ -280,7 +311,7 @@ fun AppNavHost(
             StartScreen(
                 onPlayersClick = { navController.navigate("players") },
                 onCoursesClick = { navController.navigate("courses") },
-                onNewRoundClick = { navController.navigate("new_round_placeholder") }
+                onNewRoundClick = { navController.navigate("new_round") }
             )
         }
 
@@ -395,11 +426,17 @@ fun AppNavHost(
             }
         }
 
-        composable("new_round_placeholder") {
-            PlaceholderScreen(
-                title = "Ny runda",
-                text = "Den här funktionen kommer senare.",
-                onBack = { navController.popBackStack() }
+        composable("new_round") {
+            NewRoundScreen(
+                players = players,
+                courses = courses,
+                layoutsByCourse = layoutsByCourse,
+                onBack = { navController.popBackStack() },
+                observeCourseLayouts = observeCourseLayouts,
+                onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId ->
+                    onCreateRound(courseId, startedAt, selectedPlayerIds, selectedLayoutId)
+                    navController.popBackStack()
+                }
             )
         }
     }
@@ -1293,6 +1330,236 @@ fun EditHoleDialog(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NewRoundScreen(
+    players: List<PlayerEntity>,
+    courses: List<CourseEntity>,
+    layoutsByCourse: Map<Long, List<LayoutEntity>>,
+    onBack: () -> Unit,
+    observeCourseLayouts: (Long) -> Unit,
+    onCreateRound: (Long, Long, List<Long>, Long) -> Unit
+) {
+    var selectedCourseId by remember { mutableStateOf<Long?>(null) }
+    var selectedLayoutId by remember { mutableStateOf<Long?>(null) }
+    var selectedPlayerIds by remember { mutableStateOf(setOf<Long>()) }
+
+    val now = remember { java.time.LocalDateTime.now() }
+
+    var selectedDate by remember {
+        mutableStateOf(now.toLocalDate())
+    }
+    var selectedHour by remember {
+        mutableStateOf(now.hour)
+    }
+    var selectedMinute by remember {
+        mutableStateOf(now.minute)
+    }
+
+    LaunchedEffect(selectedCourseId) {
+        selectedCourseId?.let { observeCourseLayouts(it) }
+        selectedLayoutId = null
+    }
+
+    val availableLayouts = selectedCourseId?.let { layoutsByCourse[it] } ?: emptyList()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Ny runda") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Button(
+                onClick = {
+                    val courseId = selectedCourseId
+                    val layoutId = selectedLayoutId
+                    if (courseId != null && layoutId != null && selectedPlayerIds.isNotEmpty()) {
+                        val startedAt = java.time.LocalDateTime
+                            .of(selectedDate, java.time.LocalTime.of(selectedHour, selectedMinute))
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli()
+
+                        onCreateRound(
+                            courseId,
+                            startedAt,
+                            selectedPlayerIds.toList(),
+                            layoutId
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                enabled = selectedCourseId != null &&
+                        selectedLayoutId != null &&
+                        selectedPlayerIds.isNotEmpty()
+            ) {
+                Text("Starta runda")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text("Bana", style = MaterialTheme.typography.titleMedium)
+            }
+
+            items(courses) { course ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedCourseId = course.id }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (selectedCourseId == course.id) "●" else "○")
+                    Text(course.name)
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Layout", style = MaterialTheme.typography.titleMedium)
+            }
+
+            items(availableLayouts) { layout ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedLayoutId = layout.id }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (selectedLayoutId == layout.id) "●" else "○")
+                    Text(layout.name)
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Datum", style = MaterialTheme.typography.titleMedium)
+                DateRow(
+                    selectedDate = selectedDate,
+                    onPreviousDay = { selectedDate = selectedDate.minusDays(1) },
+                    onNextDay = { selectedDate = selectedDate.plusDays(1) }
+                )
+            }
+
+            item {
+                Text("Starttid", style = MaterialTheme.typography.titleMedium)
+                TimeRow(
+                    hour = selectedHour,
+                    minute = selectedMinute,
+                    onHourDecrease = { selectedHour = (selectedHour + 23) % 24 },
+                    onHourIncrease = { selectedHour = (selectedHour + 1) % 24 },
+                    onMinuteDecrease = { selectedMinute = (selectedMinute + 59) % 60 },
+                    onMinuteIncrease = { selectedMinute = (selectedMinute + 1) % 60 }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Spelare", style = MaterialTheme.typography.titleMedium)
+            }
+
+            items(players) { player ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            selectedPlayerIds =
+                                if (player.id in selectedPlayerIds) {
+                                    selectedPlayerIds - player.id
+                                } else {
+                                    selectedPlayerIds + player.id
+                                }
+                        }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (player.id in selectedPlayerIds) "☑" else "☐")
+                    Text(player.name)
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.navigationBarsPadding())
+            }
+        }
+    }
+}
+
+@Composable
+fun DateRow(
+    selectedDate: java.time.LocalDate,
+    onPreviousDay: () -> Unit,
+    onNextDay: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Button(onClick = onPreviousDay) {
+            Text("-")
+        }
+
+        Text(
+            text = selectedDate.toString(),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        Button(onClick = onNextDay) {
+            Text("+")
+        }
+    }
+}
+
+@Composable
+fun TimeRow(
+    hour: Int,
+    minute: Int,
+    onHourDecrease: () -> Unit,
+    onHourIncrease: () -> Unit,
+    onMinuteDecrease: () -> Unit,
+    onMinuteIncrease: () -> Unit
+) {
+    val timeText = String.format("%02d:%02d", hour, minute)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = timeText,
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onHourDecrease) { Text("Tim -") }
+            Button(onClick = onHourIncrease) { Text("Tim +") }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onMinuteDecrease) { Text("Min -") }
+            Button(onClick = onMinuteIncrease) { Text("Min +") }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

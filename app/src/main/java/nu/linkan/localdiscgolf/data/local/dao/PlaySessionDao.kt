@@ -11,6 +11,7 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
 import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
+import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
 
 @Dao
 interface PlaySessionDao {
@@ -71,6 +72,38 @@ interface PlaySessionDao {
         throwsCount: Int,
         updatedAt: Long
     )
+
+    @Query("""
+    UPDATE play_session
+    SET ended_at = :endedAt,
+        status = :status,
+        updated_at = :updatedAt
+    WHERE id = :playSessionId
+""")
+    suspend fun finishPlaySession(
+        playSessionId: Long,
+        endedAt: Long,
+        status: String,
+        updatedAt: Long
+    )
+
+    @Query("""
+    SELECT
+        sp.player_id AS playerId,
+        sp.display_name AS playerName,
+        sp.start_order AS startOrder,
+        sph.sequence_number AS sequenceNumber,
+        sph.hole_number_snapshot AS holeNumberSnapshot,
+        sph.par_snapshot AS parSnapshot,
+        sph.throws_count AS throwsCount
+    FROM session_player_hole sph
+    INNER JOIN session_player sp ON sp.id = sph.session_player_id
+    WHERE sp.play_session_id = :playSessionId
+    ORDER BY sp.start_order, sp.id, sph.sequence_number
+""")
+    fun observeRoundSummaryHoleRows(
+        playSessionId: Long
+    ): Flow<List<RoundSummaryHoleRow>>
 
     @Transaction
     suspend fun createPlaySessionWithPlayersAndHoles(

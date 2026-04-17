@@ -17,6 +17,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
@@ -64,6 +73,7 @@ import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
 import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
+import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
 
 class MainActivity : ComponentActivity() {
 
@@ -88,6 +98,8 @@ class MainActivity : ComponentActivity() {
                 val layoutsByCourse = remember { mutableStateMapOf<Long, List<LayoutEntity>>() }
                 val layoutHolesByLayout = remember { mutableStateMapOf<Long, List<LayoutHoleWithHole>>() }
                 val roundHoleRowsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerRow>>() }
+                val holeCountBySession = remember { mutableStateMapOf<Long, Int>() }
+                val roundSummaryRowsBySession = remember { mutableStateMapOf<Long, List<RoundSummaryHoleRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -108,6 +120,8 @@ class MainActivity : ComponentActivity() {
                     layoutsByCourse = layoutsByCourse,
                     layoutHolesByLayout = layoutHolesByLayout,
                     roundHoleRowsByKey = roundHoleRowsByKey,
+                    holeCountBySession = holeCountBySession,
+                    roundSummaryRowsBySession = roundSummaryRowsBySession,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -173,6 +187,18 @@ class MainActivity : ComponentActivity() {
                                     updatedAt = now
                                 )
                             )
+                        }
+                    },
+                    observeSessionHoleCount = { playSessionId ->
+                        lifecycleScope.launch {
+                            holeCountBySession[playSessionId] = playSessionDao.getHoleCountForSession(playSessionId)
+                        }
+                    },
+                    observeRoundSummaryRows = { playSessionId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeRoundSummaryHoleRows(playSessionId).collectLatest { rows ->
+                                roundSummaryRowsBySession[playSessionId] = rows
+                            }
                         }
                     },
                     observeCourseLayouts = { courseId ->
@@ -298,6 +324,17 @@ class MainActivity : ComponentActivity() {
                                 updatedAt = System.currentTimeMillis()
                             )
                         }
+                    },
+                    onFinishRound = { playSessionId ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            playSessionDao.finishPlaySession(
+                                playSessionId = playSessionId,
+                                endedAt = now,
+                                status = "completed",
+                                updatedAt = now
+                            )
+                        }
                     }
                 )
             }
@@ -314,6 +351,8 @@ fun AppNavHost(
     layoutsByCourse: Map<Long, List<LayoutEntity>>,
     layoutHolesByLayout: Map<Long, List<LayoutHoleWithHole>>,
     roundHoleRowsByKey: Map<String, List<RoundHolePlayerRow>>,
+    holeCountBySession: Map<Long, Int>,
+    roundSummaryRowsBySession: Map<Long, List<RoundSummaryHoleRow>>,
     onAddPlayer: (String) -> Unit,
     onAddCourse: (String) -> Unit,
     observeCourseHoles: (Long) -> Unit,
@@ -328,7 +367,10 @@ fun AppNavHost(
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onCreateRound: (Long, Long, List<Long>, Long, (Long) -> Unit) -> Unit,
     observeRoundHoleRows: (Long, Int) -> Unit,
-    onUpdateThrowsForHole: (Long, Int) -> Unit
+    onUpdateThrowsForHole: (Long, Int) -> Unit,
+    onFinishRound: (Long) -> Unit,
+    observeSessionHoleCount: (Long) -> Unit,
+    observeRoundSummaryRows: (Long) -> Unit
 ){
     NavHost(
         navController = navController,
@@ -485,13 +527,16 @@ fun AppNavHost(
 
             LaunchedEffect(playSessionId, sequenceNumber) {
                 observeRoundHoleRows(playSessionId, sequenceNumber)
+                observeSessionHoleCount(playSessionId)
             }
 
             val rows = roundHoleRowsByKey["$playSessionId-$sequenceNumber"] ?: emptyList()
+            val holeCount = holeCountBySession[playSessionId] ?: 0
 
             RoundHoleScreen(
                 rows = rows,
                 sequenceNumber = sequenceNumber,
+                totalHoleCount = holeCount,
                 onBack = { navController.popBackStack() },
                 onPreviousHole = {
                     if (sequenceNumber > 1) {
@@ -499,10 +544,44 @@ fun AppNavHost(
                     }
                 },
                 onNextHole = {
-                    navController.navigate("round/$playSessionId/${sequenceNumber + 1}")
+                    if (holeCount > 0 && sequenceNumber < holeCount) {
+                        navController.navigate("round/$playSessionId/${sequenceNumber + 1}")
+                    }
                 },
-                onSaveThrows = { sessionPlayerHoleId, throwsCount ->
-                    onUpdateThrowsForHole(sessionPlayerHoleId, throwsCount)
+                onSaveHoleResults = { values ->
+                    values.forEach { (sessionPlayerHoleId, throwsCount) ->
+                        onUpdateThrowsForHole(sessionPlayerHoleId, throwsCount)
+                    }
+                },
+                onFinishRound = {
+                    onFinishRound(playSessionId)
+                    navController.navigate("round_summary/$playSessionId") {
+                        popUpTo("start")
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = "round_summary/{playSessionId}",
+            arguments = listOf(
+                navArgument("playSessionId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val playSessionId = backStackEntry.arguments?.getLong("playSessionId") ?: return@composable
+
+            LaunchedEffect(playSessionId) {
+                observeRoundSummaryRows(playSessionId)
+            }
+
+            val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+
+            RoundSummaryScreen(
+                rows = rows,
+                onBackToStart = {
+                    navController.navigate("start") {
+                        popUpTo("start") { inclusive = true }
+                    }
                 }
             )
         }
@@ -1636,12 +1715,35 @@ fun TimeRow(
 fun RoundHoleScreen(
     rows: List<RoundHolePlayerRow>,
     sequenceNumber: Int,
+    totalHoleCount: Int,
     onBack: () -> Unit,
     onPreviousHole: () -> Unit,
     onNextHole: () -> Unit,
-    onSaveThrows: (Long, Int) -> Unit
+    onSaveHoleResults: (List<Pair<Long, Int>>) -> Unit,
+    onFinishRound: () -> Unit
 ) {
     val header = rows.firstOrNull()
+    var showFinishDialog by remember { mutableStateOf(false) }
+
+    val inputValues = remember(rows) {
+        mutableStateMapOf<Long, String>().apply {
+            rows.forEach { row ->
+                this[row.sessionPlayerHoleId] = row.throwsCount?.toString() ?: ""
+            }
+        }
+    }
+
+    fun saveCurrentHole() {
+        val valuesToSave = inputValues.mapNotNull { (sessionPlayerHoleId, textValue) ->
+            val throwsValue = textValue.trim().toIntOrNull()
+            if (throwsValue != null) {
+                sessionPlayerHoleId to throwsValue
+            } else {
+                null
+            }
+        }
+        onSaveHoleResults(valuesToSave)
+    }
 
     Scaffold(
         topBar = {
@@ -1658,27 +1760,44 @@ fun RoundHoleScreen(
             )
         },
         bottomBar = {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onPreviousHole,
-                    modifier = Modifier.weight(1f),
-                    enabled = sequenceNumber > 1
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Föregående")
+                    Button(
+                        onClick = {
+                            saveCurrentHole()
+                            onPreviousHole()
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = sequenceNumber > 1
+                    ) {
+                        Text("Föregående")
+                    }
+
+                    Button(
+                        onClick = {
+                            saveCurrentHole()
+                            onNextHole()
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = totalHoleCount > 0 && sequenceNumber < totalHoleCount
+                    ) {
+                        Text("Nästa")
+                    }
                 }
 
                 Button(
-                    onClick = onNextHole,
-                    modifier = Modifier.weight(1f),
-                    enabled = rows.isNotEmpty()
+                    onClick = { showFinishDialog = true },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Nästa")
+                    Text("Avsluta runda")
                 }
             }
         }
@@ -1708,8 +1827,109 @@ fun RoundHoleScreen(
                 items(rows) { row ->
                     RoundPlayerThrowsRow(
                         row = row,
-                        onSaveThrows = onSaveThrows
+                        value = inputValues[row.sessionPlayerHoleId] ?: "",
+                        onValueChange = { newValue ->
+                            if (newValue.all { it.isDigit() }) {
+                                inputValues[row.sessionPlayerHoleId] = newValue
+                            }
+                        }
                     )
+                }
+            }
+        }
+    }
+
+    if (showFinishDialog) {
+        AlertDialog(
+            onDismissRequest = { showFinishDialog = false },
+            title = { Text("Avsluta runda") },
+            text = { Text("Vill du avsluta rundan? Aktuella resultat på hålet sparas först.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        saveCurrentHole()
+                        showFinishDialog = false
+                        onFinishRound()
+                    }
+                ) {
+                    Text("Ja")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFinishDialog = false }) {
+                    Text("Nej")
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RoundSummaryScreen(
+    rows: List<RoundSummaryHoleRow>,
+    onBackToStart: () -> Unit
+) {
+    val grouped = rows
+        .groupBy { it.playerId }
+        .values
+        .sortedBy { playerRows -> playerRows.firstOrNull()?.startOrder ?: Int.MAX_VALUE }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Rundsummering") }
+            )
+        },
+        bottomBar = {
+            Button(
+                onClick = onBackToStart,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                Text("Till startsidan")
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            items(grouped) { playerRows ->
+                val sortedRows = playerRows.sortedBy { it.sequenceNumber }
+                val playerName = sortedRows.firstOrNull()?.playerName ?: "Spelare"
+                val totalThrows = sortedRows.sumOf { it.throwsCount ?: 0 }
+                val totalPar = sortedRows.sumOf { it.parSnapshot }
+                val relative = totalThrows - totalPar
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = playerName,
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+
+                    Text(
+                        text = "Totalt: $totalThrows kast, par $totalPar, score ${formatRelativeScore(relative)}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        sortedRows.forEach { row ->
+                            ScoreBadge(
+                                throwsCount = row.throwsCount,
+                                par = row.parSnapshot
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1717,40 +1937,71 @@ fun RoundHoleScreen(
 }
 
 @Composable
-fun RoundPlayerThrowsRow(
-    row: RoundHolePlayerRow,
-    onSaveThrows: (Long, Int) -> Unit
+fun ScoreBadge(
+    throwsCount: Int?,
+    par: Int
 ) {
-    var text by remember(row.sessionPlayerHoleId, row.throwsCount) {
-        mutableStateOf(row.throwsCount?.toString() ?: "")
+    val text = throwsCount?.toString() ?: "-"
+    val diff = throwsCount?.minus(par)
+
+    val backgroundColor = when {
+        diff == null -> Color(0xFFE0E0E0)
+        diff <= -1 -> Color(0xFF81C784)
+        diff == 1 -> Color(0xFFFFCDD2)
+        diff >= 2 -> Color(0xFFEF9A9A)
+        else -> Color(0xFFE0E0E0)
     }
 
+    val shape = when {
+        diff != null && diff <= -1 -> CircleShape
+        diff != null && diff >= 1 -> RoundedCornerShape(2.dp)
+        else -> RoundedCornerShape(8.dp)
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .background(backgroundColor, shape)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+fun formatRelativeScore(relative: Int): String {
+    return when {
+        relative > 0 -> "+$relative"
+        else -> relative.toString()
+    }
+}
+
+@Composable
+fun RoundPlayerThrowsRow(
+    row: RoundHolePlayerRow,
+    value: String,
+    onValueChange: (String) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = row.playerName ?: "Spelare ${row.playerId}",
             style = MaterialTheme.typography.titleMedium
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Kast") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-
-            Button(
-                onClick = {
-                    val throwsValue = text.trim().toIntOrNull()
-                    if (throwsValue != null) {
-                        onSaveThrows(row.sessionPlayerHoleId, throwsValue)
-                    }
-                }
-            ) {
-                Text("Spara")
-            }
-        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text("Kast") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 

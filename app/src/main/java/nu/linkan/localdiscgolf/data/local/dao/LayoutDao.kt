@@ -78,6 +78,26 @@ interface LayoutDao {
     """)
     suspend fun closeGapAfterDelete(layoutId: Long, deletedSequenceNumber: Int)
 
+    @Query("""
+    SELECT
+        lh.id AS layoutHoleId,
+        lh.layout_id AS layoutId,
+        lh.sequence_number AS sequenceNumber,
+        h.id AS holeId,
+        h.hole_number AS holeNumber,
+        h.name AS holeName,
+        h.length_meters AS lengthMeters,
+        h.par_value AS parValue,
+        h.notes AS holeNotes
+    FROM layout_hole lh
+    INNER JOIN hole h ON h.id = lh.hole_id
+    WHERE lh.layout_id = :layoutId
+      AND h.is_active = 1
+    ORDER BY lh.sequence_number
+""")
+    suspend fun getLayoutHolesOnce(layoutId: Long): List<LayoutHoleWithHole>
+
+
     @Transaction
     suspend fun swapLayoutHoleSequences(
         firstLayoutHoleId: Long,

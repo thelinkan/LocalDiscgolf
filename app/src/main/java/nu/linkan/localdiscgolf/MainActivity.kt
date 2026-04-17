@@ -42,7 +42,6 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.toMutableStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
@@ -64,6 +63,7 @@ import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
 import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
+import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 
 class MainActivity : ComponentActivity() {
 
@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
                 val holesByCourse = remember { mutableStateMapOf<Long, List<HoleEntity>>() }
                 val layoutsByCourse = remember { mutableStateMapOf<Long, List<LayoutEntity>>() }
                 val layoutHolesByLayout = remember { mutableStateMapOf<Long, List<LayoutHoleWithHole>>() }
+                val roundHoleRowsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
                     holesByCourse = holesByCourse,
                     layoutsByCourse = layoutsByCourse,
                     layoutHolesByLayout = layoutHolesByLayout,
+                    roundHoleRowsByKey = roundHoleRowsByKey,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -249,11 +251,12 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId ->
+                    onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId, onCreated ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
 
-                            playSessionDao.createPlaySessionWithPlayers(
+                            val layoutHoles = layoutDao.getLayoutHolesOnce(selectedLayoutId)
+                            val playSessionId = playSessionDao.createPlaySessionWithPlayersAndHoles(
                                 playSession = PlaySessionEntity(
                                     courseId = courseId,
                                     startedAt = startedAt,
@@ -271,7 +274,28 @@ class MainActivity : ComponentActivity() {
                                         createdAt = now,
                                         updatedAt = now
                                     )
-                                }
+                                },
+                                layoutHoles = layoutHoles,
+                                courseId = courseId,
+                                createdAt = now
+                            )
+
+                            onCreated(playSessionId)
+                        }
+                    },
+                    observeRoundHoleRows = { playSessionId, sequenceNumber ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeRoundHoleRows(playSessionId, sequenceNumber).collectLatest { rows ->
+                                roundHoleRowsByKey["$playSessionId-$sequenceNumber"] = rows
+                            }
+                        }
+                    },
+                    onUpdateThrowsForHole = { sessionPlayerHoleId, throwsCount ->
+                        lifecycleScope.launch {
+                            playSessionDao.updateThrowsForSessionPlayerHole(
+                                sessionPlayerHoleId = sessionPlayerHoleId,
+                                throwsCount = throwsCount,
+                                updatedAt = System.currentTimeMillis()
                             )
                         }
                     }
@@ -289,6 +313,7 @@ fun AppNavHost(
     holesByCourse: Map<Long, List<HoleEntity>>,
     layoutsByCourse: Map<Long, List<LayoutEntity>>,
     layoutHolesByLayout: Map<Long, List<LayoutHoleWithHole>>,
+    roundHoleRowsByKey: Map<String, List<RoundHolePlayerRow>>,
     onAddPlayer: (String) -> Unit,
     onAddCourse: (String) -> Unit,
     observeCourseHoles: (Long) -> Unit,
@@ -301,7 +326,9 @@ fun AppNavHost(
     onRemoveHoleFromLayout: (Long, Int, Long) -> Unit,
     onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
-    onCreateRound: (Long, Long, List<Long>, Long) -> Unit
+    onCreateRound: (Long, Long, List<Long>, Long, (Long) -> Unit) -> Unit,
+    observeRoundHoleRows: (Long, Int) -> Unit,
+    onUpdateThrowsForHole: (Long, Int) -> Unit
 ){
     NavHost(
         navController = navController,
@@ -433,9 +460,49 @@ fun AppNavHost(
                 layoutsByCourse = layoutsByCourse,
                 onBack = { navController.popBackStack() },
                 observeCourseLayouts = observeCourseLayouts,
-                onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId ->
-                    onCreateRound(courseId, startedAt, selectedPlayerIds, selectedLayoutId)
-                    navController.popBackStack()
+                onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId, onCreated ->
+                    onCreateRound(
+                        courseId,
+                        startedAt,
+                        selectedPlayerIds,
+                        selectedLayoutId
+                    ) { playSessionId ->
+                        navController.navigate("round/$playSessionId/1")
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = "round/{playSessionId}/{sequenceNumber}",
+            arguments = listOf(
+                navArgument("playSessionId") { type = NavType.LongType },
+                navArgument("sequenceNumber") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val playSessionId = backStackEntry.arguments?.getLong("playSessionId") ?: return@composable
+            val sequenceNumber = backStackEntry.arguments?.getInt("sequenceNumber") ?: return@composable
+
+            LaunchedEffect(playSessionId, sequenceNumber) {
+                observeRoundHoleRows(playSessionId, sequenceNumber)
+            }
+
+            val rows = roundHoleRowsByKey["$playSessionId-$sequenceNumber"] ?: emptyList()
+
+            RoundHoleScreen(
+                rows = rows,
+                sequenceNumber = sequenceNumber,
+                onBack = { navController.popBackStack() },
+                onPreviousHole = {
+                    if (sequenceNumber > 1) {
+                        navController.navigate("round/$playSessionId/${sequenceNumber - 1}")
+                    }
+                },
+                onNextHole = {
+                    navController.navigate("round/$playSessionId/${sequenceNumber + 1}")
+                },
+                onSaveThrows = { sessionPlayerHoleId, throwsCount ->
+                    onUpdateThrowsForHole(sessionPlayerHoleId, throwsCount)
                 }
             )
         }
@@ -1340,7 +1407,7 @@ fun NewRoundScreen(
     layoutsByCourse: Map<Long, List<LayoutEntity>>,
     onBack: () -> Unit,
     observeCourseLayouts: (Long) -> Unit,
-    onCreateRound: (Long, Long, List<Long>, Long) -> Unit
+    onCreateRound: (Long, Long, List<Long>, Long, (Long) -> Unit) -> Unit,
 ) {
     var selectedCourseId by remember { mutableStateOf<Long?>(null) }
     var selectedLayoutId by remember { mutableStateOf<Long?>(null) }
@@ -1396,7 +1463,9 @@ fun NewRoundScreen(
                             startedAt,
                             selectedPlayerIds.toList(),
                             layoutId
-                        )
+                        ) { playSessionId ->
+                            // lämnas tom här om navigation sker i AppNavHost
+                        }
                     }
                 },
                 modifier = Modifier
@@ -1564,6 +1633,129 @@ fun TimeRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun RoundHoleScreen(
+    rows: List<RoundHolePlayerRow>,
+    sequenceNumber: Int,
+    onBack: () -> Unit,
+    onPreviousHole: () -> Unit,
+    onNextHole: () -> Unit,
+    onSaveThrows: (Long, Int) -> Unit
+) {
+    val header = rows.firstOrNull()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Hål $sequenceNumber") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onPreviousHole,
+                    modifier = Modifier.weight(1f),
+                    enabled = sequenceNumber > 1
+                ) {
+                    Text("Föregående")
+                }
+
+                Button(
+                    onClick = onNextHole,
+                    modifier = Modifier.weight(1f),
+                    enabled = rows.isNotEmpty()
+                ) {
+                    Text("Nästa")
+                }
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (header != null) {
+                Text(
+                    text = "Hål ${header.holeNumberSnapshot}" +
+                            (header.holeNameSnapshot?.let { " - $it" } ?: ""),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = "Längd: ${header.lengthSnapshotMeters} m, Par: ${header.parSnapshot}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(rows) { row ->
+                    RoundPlayerThrowsRow(
+                        row = row,
+                        onSaveThrows = onSaveThrows
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RoundPlayerThrowsRow(
+    row: RoundHolePlayerRow,
+    onSaveThrows: (Long, Int) -> Unit
+) {
+    var text by remember(row.sessionPlayerHoleId, row.throwsCount) {
+        mutableStateOf(row.throwsCount?.toString() ?: "")
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = row.playerName ?: "Spelare ${row.playerId}",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Kast") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+
+            Button(
+                onClick = {
+                    val throwsValue = text.trim().toIntOrNull()
+                    if (throwsValue != null) {
+                        onSaveThrows(row.sessionPlayerHoleId, throwsValue)
+                    }
+                }
+            ) {
+                Text("Spara")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun PlaceholderScreen(
     title: String,
     text: String,
@@ -1594,3 +1786,4 @@ fun PlaceholderScreen(
         }
     }
 }
+

@@ -14,6 +14,7 @@ import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
+import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
 
 @Database(
     entities = [
@@ -23,9 +24,10 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
         LayoutEntity::class,
         LayoutHoleEntity::class,
         PlaySessionEntity::class,
-        SessionPlayerEntity::class
+        SessionPlayerEntity::class,
+        SessionPlayerHoleEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

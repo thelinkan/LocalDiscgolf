@@ -76,6 +76,8 @@ import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
 import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -107,6 +109,8 @@ class MainActivity : ComponentActivity() {
                 val roundSummaryRowsBySession = remember { mutableStateMapOf<Long, List<RoundSummaryHoleRow>>() }
                 val inProgressSessions = remember { mutableStateOf<List<InProgressSessionRow>>(emptyList()) }
                 val playerSessionsByPlayer = remember { mutableStateMapOf<Long, List<PlayerSessionRow>>() }
+                val playerLayoutStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerLayoutStatsRow>>() }
+                val playerHoleStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerHoleStatsRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -136,6 +140,8 @@ class MainActivity : ComponentActivity() {
                     roundSummaryRowsBySession = roundSummaryRowsBySession,
                     inProgressSessions = inProgressSessions.value,
                     playerSessionsByPlayer = playerSessionsByPlayer,
+                    playerLayoutStatsByPlayer = playerLayoutStatsByPlayer,
+                    playerHoleStatsByPlayer = playerHoleStatsByPlayer,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -346,6 +352,20 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
+                    observePlayerLayoutStats = { playerId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeLayoutStatsForPlayer(playerId).collectLatest { rows ->
+                                playerLayoutStatsByPlayer[playerId] = rows
+                            }
+                        }
+                    },
+                    observePlayerHoleStats = { playerId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeHoleStatsForPlayer(playerId).collectLatest { rows ->
+                                playerHoleStatsByPlayer[playerId] = rows
+                            }
+                        }
+                    },
                     onFinishRound = { playSessionId ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -402,6 +422,10 @@ fun AppNavHost(
     onResumeRound: (Long, (Int) -> Unit) -> Unit,
     playerSessionsByPlayer: Map<Long, List<PlayerSessionRow>>,
     observePlayerSessions: (Long) -> Unit,
+    playerLayoutStatsByPlayer: Map<Long, List<PlayerLayoutStatsRow>>,
+    playerHoleStatsByPlayer: Map<Long, List<PlayerHoleStatsRow>>,
+    observePlayerLayoutStats: (Long) -> Unit,
+    observePlayerHoleStats: (Long) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -507,6 +531,9 @@ fun AppNavHost(
                     onBack = { navController.popBackStack() },
                     onSessionClick = { playSessionId ->
                         navController.navigate("session/$playSessionId")
+                    },
+                    onStatsClick = {
+                        navController.navigate("player_stats/$playerId")
                     }
                 )
             }
@@ -679,6 +706,122 @@ fun AppNavHost(
                     }
                 }
             )
+        }
+
+        composable(
+            route = "player_stats/{playerId}",
+            arguments = listOf(
+                navArgument("playerId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val playerId = backStackEntry.arguments?.getLong("playerId") ?: return@composable
+            val player = players.firstOrNull { it.id == playerId }
+            val layoutStats = playerLayoutStatsByPlayer[playerId] ?: emptyList()
+            val holeStats = playerHoleStatsByPlayer[playerId] ?: emptyList()
+
+            LaunchedEffect(playerId) {
+                observePlayerLayoutStats(playerId)
+                observePlayerHoleStats(playerId)
+            }
+
+            if (player != null) {
+                PlayerStatsScreen(
+                    player = player,
+                    layoutStats = layoutStats,
+                    holeStats = holeStats,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PlayerStatsScreen(
+    player: PlayerEntity,
+    layoutStats: List<PlayerLayoutStatsRow>,
+    holeStats: List<PlayerHoleStatsRow>,
+    onBack: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("${player.name} - Statistik") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            item {
+                Text(
+                    text = "Per layout",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
+
+            if (layoutStats.isEmpty()) {
+                item {
+                    Text("Ingen layoutstatistik ännu.")
+                }
+            } else {
+                items(layoutStats) { row ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "${row.courseName} - ${row.layoutName}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text("Rundor: ${row.roundsPlayed}")
+                        Text("Bästa kast: ${row.bestThrows}")
+                        Text("Medel kast: ${"%.2f".format(row.avgThrows)}")
+                        Text("Bästa mot par: ${formatRelativeScore(row.bestRelativeToPar)}")
+                        Text("Medel mot par: ${formatRelativeDouble(row.avgRelativeToPar)}")
+                    }
+                    HorizontalDivider()
+                }
+            }
+
+            item {
+                Text(
+                    text = "Per hål",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
+
+            if (holeStats.isEmpty()) {
+                item {
+                    Text("Ingen hålstatistik ännu.")
+                }
+            } else {
+                items(holeStats) { row ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "${row.courseName} - Hål ${row.holeNumber}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text("Spelat: ${row.timesPlayed} gånger")
+                        Text("Bästa kast: ${row.bestThrows}")
+                        Text("Medel kast: ${"%.2f".format(row.avgThrows)}")
+                        Text("Birdie eller bättre: ${row.birdiesOrBetter}")
+                        Text("Par: ${row.pars}")
+                        Text("Bogey eller sämre: ${row.bogeysOrWorse}")
+                    }
+                    HorizontalDivider()
+                }
+            }
         }
     }
 }
@@ -2273,7 +2416,8 @@ fun PlayerDetailScreen(
     player: PlayerEntity,
     sessions: List<PlayerSessionRow>,
     onBack: () -> Unit,
-    onSessionClick: (Long) -> Unit
+    onSessionClick: (Long) -> Unit,
+    onStatsClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -2288,6 +2432,17 @@ fun PlayerDetailScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            Button(
+                onClick = onStatsClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                Text("Statistik")
+            }
         }
     ) { innerPadding ->
         if (sessions.isEmpty()) {
@@ -2391,4 +2546,11 @@ fun formatDateTime(timestamp: Long): String {
     return Instant.ofEpochMilli(timestamp)
         .atZone(ZoneId.systemDefault())
         .format(formatter)
+}
+
+fun formatRelativeDouble(value: Double): String {
+    return when {
+        value > 0 -> "+${"%.2f".format(value)}"
+        else -> "%.2f".format(value)
+    }
 }

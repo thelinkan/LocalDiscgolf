@@ -12,6 +12,7 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
 import nu.linkan.localdiscgolf.data.local.model.LayoutHoleWithHole
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
+import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
 
 @Dao
 interface PlaySessionDao {
@@ -104,6 +105,34 @@ interface PlaySessionDao {
     fun observeRoundSummaryHoleRows(
         playSessionId: Long
     ): Flow<List<RoundSummaryHoleRow>>
+
+    @Query("""
+    SELECT
+        ps.id AS playSessionId,
+        ps.course_id AS courseId,
+        c.name AS courseName,
+        ps.started_at AS startedAt
+    FROM play_session ps
+    INNER JOIN course c ON c.id = ps.course_id
+    WHERE ps.status = 'in_progress'
+      AND ps.ended_at IS NULL
+    ORDER BY ps.started_at DESC
+""")
+    fun observeInProgressSessions(): Flow<List<InProgressSessionRow>>
+
+    @Query("""
+    SELECT COALESCE(
+        (
+            SELECT MIN(sph.sequence_number)
+            FROM session_player_hole sph
+            INNER JOIN session_player sp ON sp.id = sph.session_player_id
+            WHERE sp.play_session_id = :playSessionId
+              AND sph.throws_count IS NULL
+        ),
+        1
+    )
+""")
+    suspend fun getResumeSequenceNumber(playSessionId: Long): Int
 
     @Transaction
     suspend fun createPlaySessionWithPlayersAndHoles(

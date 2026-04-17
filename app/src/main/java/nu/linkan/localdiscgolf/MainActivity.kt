@@ -74,6 +74,10 @@ import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
+import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
 
@@ -100,6 +104,7 @@ class MainActivity : ComponentActivity() {
                 val roundHoleRowsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerRow>>() }
                 val holeCountBySession = remember { mutableStateMapOf<Long, Int>() }
                 val roundSummaryRowsBySession = remember { mutableStateMapOf<Long, List<RoundSummaryHoleRow>>() }
+                val inProgressSessions = remember { mutableStateOf<List<InProgressSessionRow>>(emptyList()) }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -108,6 +113,11 @@ class MainActivity : ComponentActivity() {
                     launch {
                         courseDao.observeActiveCourses().collectLatest { courseList ->
                             courses = courseList
+                        }
+                    }
+                    launch {
+                        playSessionDao.observeInProgressSessions().collectLatest {
+                            inProgressSessions.value = it
                         }
                     }
                 }
@@ -122,6 +132,7 @@ class MainActivity : ComponentActivity() {
                     roundHoleRowsByKey = roundHoleRowsByKey,
                     holeCountBySession = holeCountBySession,
                     roundSummaryRowsBySession = roundSummaryRowsBySession,
+                    inProgressSessions = inProgressSessions.value,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -335,6 +346,12 @@ class MainActivity : ComponentActivity() {
                                 updatedAt = now
                             )
                         }
+                    },
+                    onResumeRound = { playSessionId, onResolved ->
+                        lifecycleScope.launch {
+                            val sequenceNumber = playSessionDao.getResumeSequenceNumber(playSessionId)
+                            onResolved(sequenceNumber)
+                        }
                     }
                 )
             }
@@ -370,7 +387,9 @@ fun AppNavHost(
     onUpdateThrowsForHole: (Long, Int) -> Unit,
     onFinishRound: (Long) -> Unit,
     observeSessionHoleCount: (Long) -> Unit,
-    observeRoundSummaryRows: (Long) -> Unit
+    observeRoundSummaryRows: (Long) -> Unit,
+    inProgressSessions: List<InProgressSessionRow>,
+    onResumeRound: (Long, (Int) -> Unit) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -380,7 +399,8 @@ fun AppNavHost(
             StartScreen(
                 onPlayersClick = { navController.navigate("players") },
                 onCoursesClick = { navController.navigate("courses") },
-                onNewRoundClick = { navController.navigate("new_round") }
+                onNewRoundClick = { navController.navigate("new_round") },
+                onResumeRoundClick = { navController.navigate("resume_round") }
             )
         }
 
@@ -585,6 +605,18 @@ fun AppNavHost(
                 }
             )
         }
+
+        composable("resume_round") {
+            ResumeRoundScreen(
+                sessions = inProgressSessions,
+                onBack = { navController.popBackStack() },
+                onResume = { playSessionId ->
+                    onResumeRound(playSessionId) { sequenceNumber ->
+                        navController.navigate("round/$playSessionId/$sequenceNumber")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -593,7 +625,8 @@ fun AppNavHost(
 fun StartScreen(
     onPlayersClick: () -> Unit,
     onCoursesClick: () -> Unit,
-    onNewRoundClick: () -> Unit
+    onNewRoundClick: () -> Unit,
+    onResumeRoundClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -626,6 +659,13 @@ fun StartScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Ny runda")
+            }
+
+            Button(
+                onClick = onResumeRoundClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Återuppta runda")
             }
         }
     }
@@ -1712,6 +1752,72 @@ fun TimeRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun ResumeRoundScreen(
+    sessions: List<InProgressSessionRow>,
+    onBack: () -> Unit,
+    onResume: (Long) -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Återuppta runda") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (sessions.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Det finns inga pågående rundor.",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(sessions) { session ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onResume(session.playSessionId) }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = session.courseName,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = formatDateTime(session.startedAt),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun RoundHoleScreen(
     rows: List<RoundHolePlayerRow>,
     sequenceNumber: Int,
@@ -2038,3 +2144,9 @@ fun PlaceholderScreen(
     }
 }
 
+fun formatDateTime(timestamp: Long): String {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    return Instant.ofEpochMilli(timestamp)
+        .atZone(ZoneId.systemDefault())
+        .format(formatter)
+}

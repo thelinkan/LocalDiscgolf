@@ -504,7 +504,10 @@ fun AppNavHost(
                 PlayerDetailScreen(
                     player = player,
                     sessions = sessions,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onSessionClick = { playSessionId ->
+                        navController.navigate("session/$playSessionId")
+                    }
                 )
             }
         }
@@ -551,6 +554,28 @@ fun AppNavHost(
                     }
                 )
             }
+        }
+
+        composable(
+            route = "session/{playSessionId}",
+            arguments = listOf(
+                navArgument("playSessionId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val playSessionId = backStackEntry.arguments?.getLong("playSessionId") ?: return@composable
+
+            LaunchedEffect(playSessionId) {
+                observeRoundSummaryRows(playSessionId)
+            }
+
+            val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+
+            RoundSummaryScreen(
+                title = "Runddetalj",
+                rows = rows,
+                onBack = { navController.popBackStack() },
+                onBackToStart = null
+            )
         }
 
         composable("new_round") {
@@ -1738,6 +1763,94 @@ fun NewRoundScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RoundSummaryScreen(
+    title: String,
+    rows: List<RoundSummaryHoleRow>,
+    onBack: (() -> Unit)?,
+    onBackToStart: (() -> Unit)?
+) {
+    val grouped = rows
+        .groupBy { it.playerId }
+        .values
+        .sortedBy { playerRows -> playerRows.firstOrNull()?.startOrder ?: Int.MAX_VALUE }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = if (onBack != null) {
+                    {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Tillbaka"
+                            )
+                        }
+                    }
+                } else {
+                    {}
+                }
+            )
+        },
+        bottomBar = {
+            if (onBackToStart != null) {
+                Button(
+                    onClick = onBackToStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                ) {
+                    Text("Till startsidan")
+                }
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            items(grouped) { playerRows ->
+                val sortedRows = playerRows.sortedBy { it.sequenceNumber }
+                val playerName = sortedRows.firstOrNull()?.playerName ?: "Spelare"
+                val totalThrows = sortedRows.sumOf { it.throwsCount ?: 0 }
+                val totalPar = sortedRows.sumOf { it.parSnapshot }
+                val relative = totalThrows - totalPar
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = playerName,
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+
+                    Text(
+                        text = "Totalt: $totalThrows kast, par $totalPar, score ${formatRelativeScore(relative)}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        sortedRows.forEach { row ->
+                            ScoreBadge(
+                                throwsCount = row.throwsCount,
+                                par = row.parSnapshot
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun DateRow(
     selectedDate: java.time.LocalDate,
@@ -2159,7 +2272,8 @@ fun RoundPlayerThrowsRow(
 fun PlayerDetailScreen(
     player: PlayerEntity,
     sessions: List<PlayerSessionRow>,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSessionClick: (Long) -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -2201,6 +2315,7 @@ fun PlayerDetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { onSessionClick(session.playSessionId) }
                             .padding(vertical = 6.dp)
                     ) {
                         Text(

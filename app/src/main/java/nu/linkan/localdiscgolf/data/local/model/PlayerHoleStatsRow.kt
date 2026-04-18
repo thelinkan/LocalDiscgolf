@@ -9,5 +9,7 @@ data class PlayerHoleStatsRow(
     val avgThrows: Double,
     val birdiesOrBetter: Int,
     val pars: Int,
-    val bogeysOrWorse: Int
+    val bogeys: Int,
+    val doubleBogeys: Int,
+    val tripleBogeysOrWorse: Int
 )

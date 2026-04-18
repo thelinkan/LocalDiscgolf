@@ -940,7 +940,9 @@ fun PlayerStatsScreen(
                         Text("Medel kast: ${"%.2f".format(row.avgThrows)}")
                         Text("Birdie eller bättre: ${row.birdiesOrBetter}")
                         Text("Par: ${row.pars}")
-                        Text("Bogey eller sämre: ${row.bogeysOrWorse}")
+                        Text("Bogey: ${row.bogeys}")
+                        Text("Dubbelbogey: ${row.doubleBogeys}")
+                        Text("Trippelbogey eller sämre: ${row.tripleBogeysOrWorse}")
                     }
                     HorizontalDivider()
                 }
@@ -2621,7 +2623,11 @@ fun RoundPlayerThrowsRow(
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
-                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars}  Bogey+: ${stats.bogeysOrWorse}",
+                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Bogey: ${stats.bogeys}  Dubbel: ${stats.doubleBogeys}  Trippel+: ${stats.tripleBogeysOrWorse}",
                 style = MaterialTheme.typography.bodySmall
             )
         } else {

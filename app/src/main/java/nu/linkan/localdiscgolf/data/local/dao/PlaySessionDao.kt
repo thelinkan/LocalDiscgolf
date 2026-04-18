@@ -156,7 +156,9 @@ interface PlaySessionDao {
         AVG(sph.throws_count * 1.0) AS avgThrows,
         SUM(CASE WHEN sph.throws_count <= sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
         SUM(CASE WHEN sph.throws_count = sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
-        SUM(CASE WHEN sph.throws_count >= sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeysOrWorse
+        SUM(CASE WHEN sph.throws_count = sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeys,
+        SUM(CASE WHEN sph.throws_count = sph.par_snapshot + 2 THEN 1 ELSE 0 END) AS doubleBogeys,
+        SUM(CASE WHEN sph.throws_count >= sph.par_snapshot + 3 THEN 1 ELSE 0 END) AS tripleBogeysOrWorse
     FROM session_player_hole sph
     INNER JOIN session_player sp ON sp.id = sph.session_player_id
     INNER JOIN play_session ps ON ps.id = sp.play_session_id
@@ -257,7 +259,9 @@ interface PlaySessionDao {
         AVG(hist_sph.throws_count * 1.0) AS avgThrows,
         SUM(CASE WHEN hist_sph.throws_count <= hist_sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
         SUM(CASE WHEN hist_sph.throws_count = hist_sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
-        SUM(CASE WHEN hist_sph.throws_count >= hist_sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeysOrWorse
+        SUM(CASE WHEN hist_sph.throws_count = hist_sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeys,
+        SUM(CASE WHEN hist_sph.throws_count = hist_sph.par_snapshot + 2 THEN 1 ELSE 0 END) AS doubleBogeys,
+        SUM(CASE WHEN hist_sph.throws_count >= hist_sph.par_snapshot + 3 THEN 1 ELSE 0 END) AS tripleBogeysOrWorse
     FROM session_player current_sp
     INNER JOIN session_player hist_sp
         ON hist_sp.player_id = current_sp.player_id

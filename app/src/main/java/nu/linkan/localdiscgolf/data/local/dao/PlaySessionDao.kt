@@ -16,6 +16,7 @@ import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 
 @Dao
 interface PlaySessionDao {
@@ -111,6 +112,94 @@ interface PlaySessionDao {
 
     @Query("""
     SELECT
+        c.id AS courseId,
+        c.name AS courseName,
+        l.name AS layoutName,
+        COUNT(DISTINCT ps.id) AS roundsPlayed,
+        MIN(player_round.totalThrows) AS bestThrows,
+        AVG(player_round.totalThrows * 1.0) AS avgThrows,
+        MIN(player_round.totalThrows - player_round.totalPar) AS bestRelativeToPar,
+        AVG((player_round.totalThrows - player_round.totalPar) * 1.0) AS avgRelativeToPar
+    FROM (
+        SELECT
+            sp.id AS sessionPlayerId,
+            sp.player_id AS playerId,
+            sp.layout_id AS layoutId,
+            sp.play_session_id AS playSessionId,
+            SUM(COALESCE(sph.throws_count, 0)) AS totalThrows,
+            SUM(sph.par_snapshot) AS totalPar
+        FROM session_player sp
+        INNER JOIN session_player_hole sph ON sph.session_player_id = sp.id
+        GROUP BY sp.id, sp.player_id, sp.layout_id, sp.play_session_id
+    ) AS player_round
+    INNER JOIN session_player sp ON sp.id = player_round.sessionPlayerId
+    INNER JOIN play_session ps ON ps.id = player_round.playSessionId
+    INNER JOIN course c ON c.id = ps.course_id
+    INNER JOIN layout l ON l.id = sp.layout_id
+    WHERE sp.player_id = :playerId
+      AND ps.status = 'completed'
+    GROUP BY c.id, c.name, l.name
+    ORDER BY c.name, l.name
+""")
+    fun observeLayoutStatsForPlayer(
+        playerId: Long
+    ): Flow<List<PlayerLayoutStatsRow>>
+
+    @Query("""
+    SELECT
+        c.id AS courseId,
+        c.name AS courseName,
+        sph.hole_number_snapshot AS holeNumber,
+        COUNT(*) AS timesPlayed,
+        MIN(sph.throws_count) AS bestThrows,
+        AVG(sph.throws_count * 1.0) AS avgThrows,
+        SUM(CASE WHEN sph.throws_count <= sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
+        SUM(CASE WHEN sph.throws_count = sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
+        SUM(CASE WHEN sph.throws_count >= sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeysOrWorse
+    FROM session_player_hole sph
+    INNER JOIN session_player sp ON sp.id = sph.session_player_id
+    INNER JOIN play_session ps ON ps.id = sp.play_session_id
+    INNER JOIN course c ON c.id = ps.course_id
+    WHERE sp.player_id = :playerId
+      AND ps.status = 'completed'
+      AND sph.throws_count IS NOT NULL
+    GROUP BY c.id, c.name, sph.hole_number_snapshot
+    ORDER BY c.name, sph.hole_number_snapshot
+""")
+    fun observeHoleStatsForPlayer(
+        playerId: Long
+    ): Flow<List<PlayerHoleStatsRow>>
+
+    @Query("""
+    SELECT
+        ps.id AS playSessionId,
+        ps.started_at AS startedAt,
+        c.id AS courseId,
+        c.name AS courseName,
+        l.name AS layoutName,
+        sph.hole_number_snapshot AS holeNumber,
+        sph.par_snapshot AS parSnapshot,
+        sph.throws_count AS throwsCount
+    FROM session_player_hole sph
+    INNER JOIN session_player sp ON sp.id = sph.session_player_id
+    INNER JOIN play_session ps ON ps.id = sp.play_session_id
+    INNER JOIN course c ON c.id = ps.course_id
+    INNER JOIN layout l ON l.id = sp.layout_id
+    WHERE sp.player_id = :playerId
+      AND c.id = :courseId
+      AND sph.hole_number_snapshot = :holeNumber
+      AND ps.status = 'completed'
+      AND sph.throws_count IS NOT NULL
+    ORDER BY ps.started_at DESC
+""")
+    fun observeHoleDetailForPlayer(
+        playerId: Long,
+        courseId: Long,
+        holeNumber: Int
+    ): Flow<List<PlayerHoleDetailRoundRow>>
+
+    @Query("""
+    SELECT
         ps.id AS playSessionId,
         ps.course_id AS courseId,
         c.name AS courseName,
@@ -157,64 +246,6 @@ interface PlaySessionDao {
     fun observeSessionsForPlayer(
         playerId: Long
     ): Flow<List<PlayerSessionRow>>
-
-    @Query("""
-    SELECT
-        c.name AS courseName,
-        l.name AS layoutName,
-        COUNT(DISTINCT ps.id) AS roundsPlayed,
-        MIN(player_round.totalThrows) AS bestThrows,
-        AVG(player_round.totalThrows * 1.0) AS avgThrows,
-        MIN(player_round.totalThrows - player_round.totalPar) AS bestRelativeToPar,
-        AVG((player_round.totalThrows - player_round.totalPar) * 1.0) AS avgRelativeToPar
-    FROM (
-        SELECT
-            sp.id AS sessionPlayerId,
-            sp.player_id AS playerId,
-            sp.layout_id AS layoutId,
-            sp.play_session_id AS playSessionId,
-            SUM(COALESCE(sph.throws_count, 0)) AS totalThrows,
-            SUM(sph.par_snapshot) AS totalPar
-        FROM session_player sp
-        INNER JOIN session_player_hole sph ON sph.session_player_id = sp.id
-        GROUP BY sp.id, sp.player_id, sp.layout_id, sp.play_session_id
-    ) AS player_round
-    INNER JOIN session_player sp ON sp.id = player_round.sessionPlayerId
-    INNER JOIN play_session ps ON ps.id = player_round.playSessionId
-    INNER JOIN course c ON c.id = ps.course_id
-    INNER JOIN layout l ON l.id = sp.layout_id
-    WHERE sp.player_id = :playerId
-      AND ps.status = 'completed'
-    GROUP BY c.name, l.name
-    ORDER BY c.name, l.name
-""")
-    fun observeLayoutStatsForPlayer(
-        playerId: Long
-    ): Flow<List<PlayerLayoutStatsRow>>
-
-    @Query("""
-    SELECT
-        c.name AS courseName,
-        sph.hole_number_snapshot AS holeNumber,
-        COUNT(*) AS timesPlayed,
-        MIN(sph.throws_count) AS bestThrows,
-        AVG(sph.throws_count * 1.0) AS avgThrows,
-        SUM(CASE WHEN sph.throws_count <= sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
-        SUM(CASE WHEN sph.throws_count = sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
-        SUM(CASE WHEN sph.throws_count >= sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeysOrWorse
-    FROM session_player_hole sph
-    INNER JOIN session_player sp ON sp.id = sph.session_player_id
-    INNER JOIN play_session ps ON ps.id = sp.play_session_id
-    INNER JOIN course c ON c.id = ps.course_id
-    WHERE sp.player_id = :playerId
-      AND ps.status = 'completed'
-      AND sph.throws_count IS NOT NULL
-    GROUP BY c.name, sph.hole_number_snapshot
-    ORDER BY c.name, sph.hole_number_snapshot
-""")
-    fun observeHoleStatsForPlayer(
-        playerId: Long
-    ): Flow<List<PlayerHoleStatsRow>>
 
     @Transaction
     suspend fun createPlaySessionWithPlayersAndHoles(

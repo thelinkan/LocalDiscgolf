@@ -44,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,6 +79,7 @@ import nu.linkan.localdiscgolf.data.local.model.InProgressSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -111,6 +113,7 @@ class MainActivity : ComponentActivity() {
                 val playerSessionsByPlayer = remember { mutableStateMapOf<Long, List<PlayerSessionRow>>() }
                 val playerLayoutStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerLayoutStatsRow>>() }
                 val playerHoleStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerHoleStatsRow>>() }
+                val playerHoleDetailRowsByKey = remember { mutableStateMapOf<String, List<PlayerHoleDetailRoundRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -142,6 +145,7 @@ class MainActivity : ComponentActivity() {
                     playerSessionsByPlayer = playerSessionsByPlayer,
                     playerLayoutStatsByPlayer = playerLayoutStatsByPlayer,
                     playerHoleStatsByPlayer = playerHoleStatsByPlayer,
+                    playerHoleDetailRowsByKey = playerHoleDetailRowsByKey,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -336,6 +340,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    observePlayerHoleDetail = { playerId, courseId, holeNumber ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeHoleDetailForPlayer(playerId, courseId, holeNumber).collectLatest { rows ->
+                                playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber"] = rows
+                            }
+                        }
+                    },
                     observePlayerSessions = { playerId ->
                         lifecycleScope.launch {
                             playSessionDao.observeSessionsForPlayer(playerId).collectLatest { rows ->
@@ -426,6 +437,8 @@ fun AppNavHost(
     playerHoleStatsByPlayer: Map<Long, List<PlayerHoleStatsRow>>,
     observePlayerLayoutStats: (Long) -> Unit,
     observePlayerHoleStats: (Long) -> Unit,
+    playerHoleDetailRowsByKey: Map<String, List<PlayerHoleDetailRoundRow>>,
+    observePlayerHoleDetail: (Long, Long, Int) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -709,6 +722,30 @@ fun AppNavHost(
         }
 
         composable(
+            route = "player_hole_stats/{playerId}/{courseId}/{holeNumber}",
+            arguments = listOf(
+                navArgument("playerId") { type = NavType.LongType },
+                navArgument("courseId") { type = NavType.LongType },
+                navArgument("holeNumber") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val playerId = backStackEntry.arguments?.getLong("playerId") ?: return@composable
+            val courseId = backStackEntry.arguments?.getLong("courseId") ?: return@composable
+            val holeNumber = backStackEntry.arguments?.getInt("holeNumber") ?: return@composable
+
+            LaunchedEffect(playerId, courseId, holeNumber) {
+                observePlayerHoleDetail(playerId, courseId, holeNumber)
+            }
+
+            val rows = playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber"] ?: emptyList()
+
+            PlayerHoleDetailScreen(
+                rows = rows,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
             route = "player_stats/{playerId}",
             arguments = listOf(
                 navArgument("playerId") { type = NavType.LongType }
@@ -729,7 +766,10 @@ fun AppNavHost(
                     player = player,
                     layoutStats = layoutStats,
                     holeStats = holeStats,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onHoleClick = { courseId, holeNumber ->
+                        navController.navigate("player_hole_stats/$playerId/$courseId/$holeNumber")
+                    }
                 )
             }
         }
@@ -742,8 +782,23 @@ fun PlayerStatsScreen(
     player: PlayerEntity,
     layoutStats: List<PlayerLayoutStatsRow>,
     holeStats: List<PlayerHoleStatsRow>,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onHoleClick: (Long, Int) -> Unit
 ) {
+    var selectedCourseId by remember(player.id) { mutableStateOf<Long?>(null) }
+
+    val availableCourses = (
+            layoutStats.map { it.courseId to it.courseName } +
+                    holeStats.map { it.courseId to it.courseName }
+            ).distinctBy { it.first }.sortedBy { it.second }
+
+    val filteredLayoutStats = layoutStats.filter {
+        selectedCourseId == null || it.courseId == selectedCourseId
+    }
+    val filteredHoleStats = holeStats.filter {
+        selectedCourseId == null || it.courseId == selectedCourseId
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -768,17 +823,53 @@ fun PlayerStatsScreen(
         ) {
             item {
                 Text(
+                    text = "Filtrera bana",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (selectedCourseId == null) {
+                        Button(onClick = { selectedCourseId = null }) {
+                            Text("Alla")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { selectedCourseId = null }) {
+                            Text("Alla")
+                        }
+                    }
+
+                    availableCourses.forEach { (courseId, courseName) ->
+                        if (selectedCourseId == courseId) {
+                            Button(onClick = { selectedCourseId = courseId }) {
+                                Text(courseName)
+                            }
+                        } else {
+                            OutlinedButton(onClick = { selectedCourseId = courseId }) {
+                                Text(courseName)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
                     text = "Per layout",
                     style = MaterialTheme.typography.headlineSmall
                 )
             }
 
-            if (layoutStats.isEmpty()) {
+            if (filteredLayoutStats.isEmpty()) {
                 item {
                     Text("Ingen layoutstatistik ännu.")
                 }
             } else {
-                items(layoutStats) { row ->
+                items(filteredLayoutStats) { row ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = "${row.courseName} - ${row.layoutName}",
@@ -801,13 +892,19 @@ fun PlayerStatsScreen(
                 )
             }
 
-            if (holeStats.isEmpty()) {
+            if (filteredHoleStats.isEmpty()) {
                 item {
                     Text("Ingen hålstatistik ännu.")
                 }
             } else {
-                items(holeStats) { row ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(filteredHoleStats) { row ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onHoleClick(row.courseId, row.holeNumber) }
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = "${row.courseName} - Hål ${row.holeNumber}",
                             style = MaterialTheme.typography.titleMedium
@@ -872,6 +969,93 @@ fun StartScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Återuppta runda")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PlayerHoleDetailScreen(
+    rows: List<PlayerHoleDetailRoundRow>,
+    onBack: () -> Unit
+) {
+    val header = rows.firstOrNull()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (header != null) {
+                            "${header.courseName} - Hål ${header.holeNumber}"
+                        } else {
+                            "Håldetalj"
+                        }
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (rows.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp)
+            ) {
+                Text("Ingen hålstatistik ännu.")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    val avg = rows.map { it.throwsCount }.average()
+                    val best = rows.minOf { it.throwsCount }
+                    val par = header?.parSnapshot ?: 0
+
+                    Text(
+                        text = "Par $par",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text("Spelat: ${rows.size} gånger")
+                    Text("Bästa kast: $best")
+                    Text("Medel kast: ${"%.2f".format(avg)}")
+                }
+
+                items(rows) { row ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = formatDateTime(row.startedAt),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text("Layout: ${row.layoutName ?: "-"}")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Resultat:")
+                            ScoreBadge(
+                                throwsCount = row.throwsCount,
+                                par = row.parSnapshot
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
             }
         }
     }

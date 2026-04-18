@@ -1,6 +1,7 @@
 package nu.linkan.localdiscgolf.data.local.model
 
 data class PlayerHoleStatsRow(
+    val courseId: Long,
     val courseName: String,
     val holeNumber: Int,
     val timesPlayed: Int,

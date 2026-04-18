@@ -80,6 +80,7 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
+import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -114,6 +115,7 @@ class MainActivity : ComponentActivity() {
                 val playerLayoutStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerLayoutStatsRow>>() }
                 val playerHoleStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerHoleStatsRow>>() }
                 val playerHoleDetailRowsByKey = remember { mutableStateMapOf<String, List<PlayerHoleDetailRoundRow>>() }
+                val roundHoleStatsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerStatsRow>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -146,6 +148,7 @@ class MainActivity : ComponentActivity() {
                     playerLayoutStatsByPlayer = playerLayoutStatsByPlayer,
                     playerHoleStatsByPlayer = playerHoleStatsByPlayer,
                     playerHoleDetailRowsByKey = playerHoleDetailRowsByKey,
+                    roundHoleStatsByKey = roundHoleStatsByKey,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -229,6 +232,13 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             layoutDao.observeActiveLayoutsForCourse(courseId).collectLatest { layouts ->
                                 layoutsByCourse[courseId] = layouts
+                            }
+                        }
+                    },
+                    observeRoundHoleStats = { playSessionId, holeId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeHoleStatsForPlayersInSessionOnHole(playSessionId, holeId).collectLatest { rows ->
+                                roundHoleStatsByKey["$playSessionId-$holeId"] = rows
                             }
                         }
                     },
@@ -439,6 +449,8 @@ fun AppNavHost(
     observePlayerHoleStats: (Long) -> Unit,
     playerHoleDetailRowsByKey: Map<String, List<PlayerHoleDetailRoundRow>>,
     observePlayerHoleDetail: (Long, Long, Int) -> Unit,
+    roundHoleStatsByKey: Map<String, List<RoundHolePlayerStatsRow>>,
+    observeRoundHoleStats: (Long, Long) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -655,9 +667,23 @@ fun AppNavHost(
 
             val rows = roundHoleRowsByKey["$playSessionId-$sequenceNumber"] ?: emptyList()
             val holeCount = holeCountBySession[playSessionId] ?: 0
+            val holeId = rows.firstOrNull()?.holeId
+
+            LaunchedEffect(playSessionId, holeId) {
+                if (holeId != null) {
+                    observeRoundHoleStats(playSessionId, holeId)
+                }
+            }
+
+            val statsRows = if (holeId != null) {
+                roundHoleStatsByKey["$playSessionId-$holeId"] ?: emptyList()
+            } else {
+                emptyList()
+            }
 
             RoundHoleScreen(
                 rows = rows,
+                statsRows = statsRows,
                 sequenceNumber = sequenceNumber,
                 totalHoleCount = holeCount,
                 onBack = { navController.popBackStack() },
@@ -2303,6 +2329,7 @@ fun ResumeRoundScreen(
 @Composable
 fun RoundHoleScreen(
     rows: List<RoundHolePlayerRow>,
+    statsRows: List<RoundHolePlayerStatsRow>,
     sequenceNumber: Int,
     totalHoleCount: Int,
     onBack: () -> Unit,
@@ -2414,8 +2441,11 @@ fun RoundHoleScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(rows) { row ->
+                    val stats = statsRows.firstOrNull { it.playerId == row.playerId && it.holeId == row.holeId }
+
                     RoundPlayerThrowsRow(
                         row = row,
+                        stats = stats,
                         value = inputValues[row.sessionPlayerHoleId] ?: "",
                         onValueChange = { newValue ->
                             if (newValue.all { it.isDigit() }) {
@@ -2575,6 +2605,7 @@ fun formatRelativeScore(relative: Int): String {
 @Composable
 fun RoundPlayerThrowsRow(
     row: RoundHolePlayerRow,
+    stats: RoundHolePlayerStatsRow?,
     value: String,
     onValueChange: (String) -> Unit
 ) {
@@ -2583,6 +2614,22 @@ fun RoundPlayerThrowsRow(
             text = row.playerName ?: "Spelare ${row.playerId}",
             style = MaterialTheme.typography.titleMedium
         )
+
+        if (stats != null) {
+            Text(
+                text = "Tidigare: ${stats.timesPlayed} rundor, PB ${stats.bestThrows}, snitt ${"%.2f".format(stats.avgThrows)}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars}  Bogey+: ${stats.bogeysOrWorse}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            Text(
+                text = "Ingen tidigare statistik på hålet.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         OutlinedTextField(
             value = value,

@@ -17,6 +17,7 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
+import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
 
 @Dao
 interface PlaySessionDao {
@@ -247,6 +248,33 @@ interface PlaySessionDao {
         playerId: Long
     ): Flow<List<PlayerSessionRow>>
 
+    @Query("""
+    SELECT
+        hist_sp.player_id AS playerId,
+        hist_sph.hole_id AS holeId,
+        COUNT(*) AS timesPlayed,
+        MIN(hist_sph.throws_count) AS bestThrows,
+        AVG(hist_sph.throws_count * 1.0) AS avgThrows,
+        SUM(CASE WHEN hist_sph.throws_count <= hist_sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
+        SUM(CASE WHEN hist_sph.throws_count = hist_sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
+        SUM(CASE WHEN hist_sph.throws_count >= hist_sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeysOrWorse
+    FROM session_player current_sp
+    INNER JOIN session_player hist_sp
+        ON hist_sp.player_id = current_sp.player_id
+    INNER JOIN play_session hist_ps
+        ON hist_ps.id = hist_sp.play_session_id
+    INNER JOIN session_player_hole hist_sph
+        ON hist_sph.session_player_id = hist_sp.id
+    WHERE current_sp.play_session_id = :playSessionId
+      AND hist_sph.hole_id = :holeId
+      AND hist_ps.status = 'completed'
+      AND hist_sph.throws_count IS NOT NULL
+    GROUP BY hist_sp.player_id, hist_sph.hole_id
+""")
+    fun observeHoleStatsForPlayersInSessionOnHole(
+        playSessionId: Long,
+        holeId: Long
+    ): Flow<List<RoundHolePlayerStatsRow>>
     @Transaction
     suspend fun createPlaySessionWithPlayersAndHoles(
         playSession: PlaySessionEntity,

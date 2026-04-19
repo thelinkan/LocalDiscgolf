@@ -100,6 +100,7 @@ interface PlaySessionDao {
         sp.start_order AS startOrder,
         sph.sequence_number AS sequenceNumber,
         sph.hole_number_snapshot AS holeNumberSnapshot,
+        sph.length_snapshot_meters AS lengthSnapshotMeters,
         sph.par_snapshot AS parSnapshot,
         sph.throws_count AS throwsCount
     FROM session_player_hole sph

@@ -6,6 +6,7 @@ data class RoundSummaryHoleRow(
     val startOrder: Int?,
     val sequenceNumber: Int,
     val holeNumberSnapshot: Int,
+    val lengthSnapshotMeters: Int,
     val parSnapshot: Int,
     val throwsCount: Int?
 )

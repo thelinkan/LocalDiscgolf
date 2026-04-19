@@ -2131,6 +2131,12 @@ fun RoundSummaryScreen(
         .values
         .sortedBy { playerRows -> playerRows.firstOrNull()?.startOrder ?: Int.MAX_VALUE }
 
+    val allHoles = rows
+        .distinctBy { it.sequenceNumber }
+        .sortedBy { it.sequenceNumber }
+
+    val holeChunks = allHoles.chunked(9)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -2167,42 +2173,201 @@ fun RoundSummaryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            items(grouped) { playerRows ->
-                val sortedRows = playerRows.sortedBy { it.sequenceNumber }
-                val playerName = sortedRows.firstOrNull()?.playerName ?: "Spelare"
-                val totalThrows = sortedRows.sumOf { it.throwsCount ?: 0 }
-                val totalPar = sortedRows.sumOf { it.parSnapshot }
-                val relative = totalThrows - totalPar
+            item {
+                RoundPlayerSummarySection(grouped = grouped)
+            }
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = playerName,
-                        style = MaterialTheme.typography.headlineSmall
-                    )
+            item {
+                Text(
+                    text = "Scorekort",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
 
-                    Text(
-                        text = "Totalt: $totalThrows kast, par $totalPar, score ${formatRelativeScore(relative)}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        sortedRows.forEach { row ->
-                            ScoreBadge(
-                                throwsCount = row.throwsCount,
-                                par = row.parSnapshot
-                            )
-                        }
-                    }
-                }
+            items(holeChunks) { holeChunk ->
+                RoundScorecardBlock(
+                    holeChunk = holeChunk,
+                    groupedPlayerRows = grouped
+                )
             }
         }
+    }
+}
+
+@Composable
+fun RoundPlayerSummarySection(
+    grouped: List<List<RoundSummaryHoleRow>>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        grouped.forEach { playerRows ->
+            val sorted = playerRows.sortedBy { it.sequenceNumber }
+            val playerName = sorted.firstOrNull()?.playerName ?: "Spelare"
+            val totalThrows = sorted.sumOf { it.throwsCount ?: 0 }
+            val totalPar = sorted.sumOf { it.parSnapshot }
+            val relative = totalThrows - totalPar
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = playerName,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "${formatRelativeScore(relative)} ($totalThrows)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RoundScorecardBlock(
+    holeChunk: List<RoundSummaryHoleRow>,
+    groupedPlayerRows: List<List<RoundSummaryHoleRow>>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ScorecardHeaderRow(
+            label = "Hål",
+            values = holeChunk.map { it.holeNumberSnapshot.toString() }
+        )
+
+        ScorecardHeaderRow(
+            label = "Längd",
+            values = holeChunk.map { it.lengthSnapshotMeters.toString() }
+        )
+
+        ScorecardHeaderRow(
+            label = "Par",
+            values = holeChunk.map { it.parSnapshot.toString() }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        groupedPlayerRows.forEach { playerRows ->
+            val sortedPlayerRows = playerRows.sortedBy { it.sequenceNumber }
+            val rowsForChunk = holeChunk.map { hole ->
+                sortedPlayerRows.firstOrNull { it.sequenceNumber == hole.sequenceNumber }
+            }
+
+            ScorecardPlayerRow(
+                playerName = sortedPlayerRows.firstOrNull()?.playerName ?: "Spelare",
+                rows = rowsForChunk
+            )
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+fun ScorecardHeaderRow(
+    label: String,
+    values: List<String>
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(2.2f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        values.forEach { value ->
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ScorecardPlayerRow(
+    playerName: String,
+    rows: List<RoundSummaryHoleRow?>
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = playerName,
+            modifier = Modifier.weight(2.2f),
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        rows.forEach { row ->
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                CompactScoreBadge(
+                    throwsCount = row?.throwsCount,
+                    par = row?.parSnapshot
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactScoreBadge(
+    throwsCount: Int?,
+    par: Int?
+) {
+    val text = throwsCount?.toString() ?: "-"
+    val diff = if (throwsCount != null && par != null) throwsCount - par else null
+
+    val backgroundColor = when {
+        diff == null -> Color.Transparent
+        diff <= -1 -> Color(0xFF81C784)
+        diff == 1 -> Color(0xFFFFCCBC)
+        diff >= 2 -> Color(0xFFFF8A65)
+        else -> Color.Transparent
+    }
+
+    val shape = when {
+        diff != null && diff <= -1 -> CircleShape
+        diff != null && diff >= 1 -> RoundedCornerShape(2.dp)
+        else -> RoundedCornerShape(0.dp)
+    }
+
+    val useBackground = diff != null && diff != 0
+
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 1.dp, vertical = 2.dp)
+            .then(
+                if (useBackground) {
+                    Modifier.background(backgroundColor, shape)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

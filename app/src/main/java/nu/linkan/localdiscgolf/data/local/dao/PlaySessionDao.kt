@@ -280,6 +280,13 @@ interface PlaySessionDao {
         playSessionId: Long,
         holeId: Long
     ): Flow<List<RoundHolePlayerStatsRow>>
+
+    @Query("""
+    DELETE FROM play_session
+    WHERE id = :playSessionId
+""")
+    suspend fun deletePlaySession(playSessionId: Long)
+
     @Transaction
     suspend fun createPlaySessionWithPlayersAndHoles(
         playSession: PlaySessionEntity,

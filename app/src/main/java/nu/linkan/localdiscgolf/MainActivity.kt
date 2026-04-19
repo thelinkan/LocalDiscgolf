@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -343,6 +344,11 @@ class MainActivity : ComponentActivity() {
                             onCreated(playSessionId)
                         }
                     },
+                    onDeleteRound = { playSessionId ->
+                        lifecycleScope.launch {
+                            playSessionDao.deletePlaySession(playSessionId)
+                        }
+                    },
                     observeRoundHoleRows = { playSessionId, sequenceNumber ->
                         lifecycleScope.launch {
                             playSessionDao.observeRoundHoleRows(playSessionId, sequenceNumber).collectLatest { rows ->
@@ -451,6 +457,7 @@ fun AppNavHost(
     observePlayerHoleDetail: (Long, Long, Int) -> Unit,
     roundHoleStatsByKey: Map<String, List<RoundHolePlayerStatsRow>>,
     observeRoundHoleStats: (Long, Long) -> Unit,
+    onDeleteRound: (Long) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -559,6 +566,9 @@ fun AppNavHost(
                     },
                     onStatsClick = {
                         navController.navigate("player_stats/$playerId")
+                    },
+                    onDeleteSession = { playSessionId ->
+                        onDeleteRound(playSessionId)
                     }
                 )
             }
@@ -2751,8 +2761,11 @@ fun PlayerDetailScreen(
     sessions: List<PlayerSessionRow>,
     onBack: () -> Unit,
     onSessionClick: (Long) -> Unit,
-    onStatsClick: () -> Unit
+    onStatsClick: () -> Unit,
+    onDeleteSession: (Long) -> Unit
 ) {
+    var sessionToDelete by remember { mutableStateOf<Long?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -2801,36 +2814,75 @@ fun PlayerDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(sessions) { session ->
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSessionClick(session.playSessionId) }
-                            .padding(vertical = 6.dp)
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = session.courseName +
-                                    (session.layoutName?.let { " - $it" } ?: ""),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "Start: ${formatDateTime(session.startedAt)}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (session.endedAt != null) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onSessionClick(session.playSessionId) }
+                                .padding(vertical = 4.dp)
+                        ) {
                             Text(
-                                text = "Slut: ${formatDateTime(session.endedAt)}",
+                                text = session.courseName +
+                                        (session.layoutName?.let { " - $it" } ?: ""),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Start: ${formatDateTime(session.startedAt)}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            if (session.endedAt != null) {
+                                Text(
+                                    text = "Slut: ${formatDateTime(session.endedAt)}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Text(
+                                text = "Status: ${formatSessionStatus(session.status)}",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
-                        Text(
-                            text = "Status: ${formatSessionStatus(session.status)}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+
+                        IconButton(onClick = { sessionToDelete = session.playSessionId }) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Ta bort runda"
+                            )
+                        }
                     }
+
                     HorizontalDivider()
                 }
             }
         }
+    }
+
+    sessionToDelete?.let { playSessionId ->
+        AlertDialog(
+            onDismissRequest = { sessionToDelete = null },
+            title = { Text("Ta bort runda") },
+            text = { Text("Vill du ta bort den här rundan? Det går inte att ångra.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteSession(playSessionId)
+                        sessionToDelete = null
+                    }
+                ) {
+                    Text("Ta bort")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionToDelete = null }) {
+                    Text("Avbryt")
+                }
+            }
+        )
     }
 }
 

@@ -82,6 +82,8 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
+import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -117,6 +119,8 @@ class MainActivity : ComponentActivity() {
                 val playerHoleStatsByPlayer = remember { mutableStateMapOf<Long, List<PlayerHoleStatsRow>>() }
                 val playerHoleDetailRowsByKey = remember { mutableStateMapOf<String, List<PlayerHoleDetailRoundRow>>() }
                 val roundHoleStatsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerStatsRow>>() }
+                val teesByHole = remember { mutableStateMapOf<Long, List<HoleTeeEntity>>() }
+                val basketsByHole = remember { mutableStateMapOf<Long, List<HoleBasketEntity>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -150,6 +154,8 @@ class MainActivity : ComponentActivity() {
                     playerHoleStatsByPlayer = playerHoleStatsByPlayer,
                     playerHoleDetailRowsByKey = playerHoleDetailRowsByKey,
                     roundHoleStatsByKey = roundHoleStatsByKey,
+                    teesByHole = teesByHole,
+                    basketsByHole = basketsByHole,
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -363,6 +369,50 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    observeHoleTees = { holeId ->
+                        lifecycleScope.launch {
+                            holeDao.observeActiveTeesForHole(holeId).collectLatest { tees ->
+                                teesByHole[holeId] = tees
+                            }
+                        }
+                    },
+                    observeHoleBaskets = { holeId ->
+                        lifecycleScope.launch {
+                            holeDao.observeActiveBasketsForHole(holeId).collectLatest { baskets ->
+                                basketsByHole[holeId] = baskets
+                            }
+                        }
+                    },
+                    onAddHoleTee = { holeId, name ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            val nextSortOrder = holeDao.getMaxTeeSortOrder(holeId) + 1
+                            holeDao.insertHoleTee(
+                                HoleTeeEntity(
+                                    holeId = holeId,
+                                    name = name,
+                                    sortOrder = nextSortOrder,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
+                    },
+                    onAddHoleBasket = { holeId, name ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            val nextSortOrder = holeDao.getMaxBasketSortOrder(holeId) + 1
+                            holeDao.insertHoleBasket(
+                                HoleBasketEntity(
+                                    holeId = holeId,
+                                    name = name,
+                                    sortOrder = nextSortOrder,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
+                    },
                     observePlayerSessions = { playerId ->
                         lifecycleScope.launch {
                             playSessionDao.observeSessionsForPlayer(playerId).collectLatest { rows ->
@@ -458,6 +508,12 @@ fun AppNavHost(
     roundHoleStatsByKey: Map<String, List<RoundHolePlayerStatsRow>>,
     observeRoundHoleStats: (Long, Long) -> Unit,
     onDeleteRound: (Long) -> Unit,
+    teesByHole: Map<Long, List<HoleTeeEntity>>,
+    basketsByHole: Map<Long, List<HoleBasketEntity>>,
+    observeHoleTees: (Long) -> Unit,
+    observeHoleBaskets: (Long) -> Unit,
+    onAddHoleTee: (Long, String) -> Unit,
+    onAddHoleBasket: (Long, String) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -515,6 +571,8 @@ fun AppNavHost(
                     course = course,
                     holes = holes,
                     layouts = layouts,
+                    teesByHole = teesByHole,
+                    basketsByHole = basketsByHole,
                     onBack = { navController.popBackStack() },
                     onAddHole = { holeNumber, name, lengthMeters, parValue, notes ->
                         onAddHole(courseId, holeNumber, name, lengthMeters, parValue, notes)
@@ -537,7 +595,11 @@ fun AppNavHost(
                     },
                     onLayoutClick = { layoutId ->
                         navController.navigate("layout/$layoutId")
-                    }
+                    },
+                    observeHoleTees = observeHoleTees,
+                    observeHoleBaskets = observeHoleBaskets,
+                    onAddHoleTee = onAddHoleTee,
+                    onAddHoleBasket = onAddHoleBasket
                 )
             }
         }
@@ -1314,15 +1376,22 @@ fun CourseDetailScreen(
     course: CourseEntity,
     holes: List<HoleEntity>,
     layouts: List<LayoutEntity>,
+    teesByHole: Map<Long, List<HoleTeeEntity>>,
+    basketsByHole: Map<Long, List<HoleBasketEntity>>,
     onBack: () -> Unit,
     onAddHole: (Int, String?, Int, Int, String?) -> Unit,
     onUpdateHole: (HoleEntity) -> Unit,
     onAddLayout: (String, String?) -> Unit,
-    onLayoutClick: (Long) -> Unit
+    onLayoutClick: (Long) -> Unit,
+    observeHoleTees: (Long) -> Unit,
+    observeHoleBaskets: (Long) -> Unit,
+    onAddHoleTee: (Long, String) -> Unit,
+    onAddHoleBasket: (Long, String) -> Unit
 ) {
     var showAddHoleDialog by remember { mutableStateOf(false) }
     var showAddLayoutDialog by remember { mutableStateOf(false) }
     var holeToEdit by remember { mutableStateOf<HoleEntity?>(null) }
+    var holeForVariants by remember { mutableStateOf<HoleEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -1372,6 +1441,11 @@ fun CourseDetailScreen(
             items(holes) { hole ->
                 HoleRow(
                     hole = hole,
+                    onClick = {
+                        observeHoleTees(hole.id)
+                        observeHoleBaskets(hole.id)
+                        holeForVariants = hole
+                    },
                     onEditClick = { holeToEdit = hole }
                 )
                 HorizontalDivider()
@@ -1459,6 +1533,17 @@ fun CourseDetailScreen(
                 onUpdateHole(updatedHole)
                 holeToEdit = null
             }
+        )
+    }
+
+    holeForVariants?.let { hole ->
+        HoleVariantsDialog(
+            hole = hole,
+            tees = teesByHole[hole.id] ?: emptyList(),
+            baskets = basketsByHole[hole.id] ?: emptyList(),
+            onDismiss = { holeForVariants = null },
+            onAddTee = { name -> onAddHoleTee(hole.id, name) },
+            onAddBasket = { name -> onAddHoleBasket(hole.id, name) }
         )
     }
 }
@@ -1722,16 +1807,21 @@ fun AddHoleToLayoutDialog(
 @Composable
 fun HoleRow(
     hole: HoleEntity,
+    onClick: () -> Unit,
     onEditClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Column(
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onClick() }
+                .padding(vertical = 4.dp)
         ) {
             Text(
                 text = "Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""),
@@ -1747,6 +1837,10 @@ fun HoleRow(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            Text(
+                text = "Tryck för utkast/korgplaceringar",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
 
         IconButton(onClick = onEditClick) {
@@ -1755,6 +1849,94 @@ fun HoleRow(
                 contentDescription = "Redigera hål"
             )
         }
+    }
+}
+
+@Composable
+fun HoleVariantsDialog(
+    hole: HoleEntity,
+    tees: List<HoleTeeEntity>,
+    baskets: List<HoleBasketEntity>,
+    onDismiss: () -> Unit,
+    onAddTee: (String) -> Unit,
+    onAddBasket: (String) -> Unit
+) {
+    var showAddTeeDialog by remember { mutableStateOf(false) }
+    var showAddBasketDialog by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Utkast", style = MaterialTheme.typography.titleMedium)
+
+                if (tees.isEmpty()) {
+                    Text("Inga utkast ännu.")
+                } else {
+                    tees.forEach { tee ->
+                        Text("• ${tee.name}")
+                    }
+                }
+
+                Button(
+                    onClick = { showAddTeeDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Nytt utkast")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Korgplaceringar", style = MaterialTheme.typography.titleMedium)
+
+                if (baskets.isEmpty()) {
+                    Text("Inga korgplaceringar ännu.")
+                } else {
+                    baskets.forEach { basket ->
+                        Text("• ${basket.name}")
+                    }
+                }
+
+                Button(
+                    onClick = { showAddBasketDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ny korgplacering")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Stäng")
+            }
+        }
+    )
+
+    if (showAddTeeDialog) {
+        NameInputDialog(
+            title = "Nytt utkast",
+            label = "Namn",
+            onDismiss = { showAddTeeDialog = false },
+            onConfirm = { name ->
+                onAddTee(name)
+                showAddTeeDialog = false
+            }
+        )
+    }
+
+    if (showAddBasketDialog) {
+        NameInputDialog(
+            title = "Ny korgplacering",
+            label = "Namn",
+            onDismiss = { showAddBasketDialog = false },
+            onConfirm = { name ->
+                onAddBasket(name)
+                showAddBasketDialog = false
+            }
+        )
     }
 }
 

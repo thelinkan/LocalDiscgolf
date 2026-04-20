@@ -8,7 +8,9 @@ import nu.linkan.localdiscgolf.data.local.dao.LayoutDao
 import nu.linkan.localdiscgolf.data.local.dao.PlaySessionDao
 import nu.linkan.localdiscgolf.data.local.dao.PlayerDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
@@ -21,13 +23,15 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
         PlayerEntity::class,
         CourseEntity::class,
         HoleEntity::class,
+        HoleTeeEntity::class,
+        HoleBasketEntity::class,
         LayoutEntity::class,
         LayoutHoleEntity::class,
         PlaySessionEntity::class,
         SessionPlayerEntity::class,
         SessionPlayerHoleEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

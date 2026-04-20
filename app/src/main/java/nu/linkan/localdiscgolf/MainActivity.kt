@@ -270,14 +270,16 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHoleToLayout = { layoutId, holeId ->
+                    onAddHoleToLayout = { layoutId, holeId, teeId, basketId ->
                         lifecycleScope.launch {
                             val nextSequence = layoutDao.getMaxSequenceNumber(layoutId) + 1
                             layoutDao.insertLayoutHole(
                                 LayoutHoleEntity(
                                     layoutId = layoutId,
                                     sequenceNumber = nextSequence,
-                                    holeId = holeId
+                                    holeId = holeId,
+                                    teeId = teeId,
+                                    basketId = basketId
                                 )
                             )
                         }
@@ -485,7 +487,7 @@ fun AppNavHost(
     observeCourseLayouts: (Long) -> Unit,
     onAddLayout: (Long, String, String?) -> Unit,
     observeLayoutHoles: (Long) -> Unit,
-    onAddHoleToLayout: (Long, Long) -> Unit,
+    onAddHoleToLayout: (Long, Long, Long?, Long?) -> Unit,
     onRemoveHoleFromLayout: (Long, Int, Long) -> Unit,
     onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
@@ -662,10 +664,12 @@ fun AppNavHost(
                 LayoutDetailScreen(
                     layout = currentLayout,
                     availableHoles = courseHoles,
+                    teesByHole = teesByHole,
+                    basketsByHole = basketsByHole,
                     layoutHoles = layoutHoles,
                     onBack = { navController.popBackStack() },
-                    onAddHoleToLayout = { holeId ->
-                        onAddHoleToLayout(layoutId, holeId)
+                    onAddHoleToLayout = { holeId, teeId, basketId ->
+                        onAddHoleToLayout(layoutId, holeId, teeId, basketId)
                     },
                     onRemoveHoleFromLayout = { layoutHoleId, sequenceNumber ->
                         onRemoveHoleFromLayout(layoutHoleId, sequenceNumber, layoutId)
@@ -1602,9 +1606,11 @@ fun AddLayoutDialog(
 fun LayoutDetailScreen(
     layout: LayoutEntity,
     availableHoles: List<HoleEntity>,
+    teesByHole: Map<Long, List<HoleTeeEntity>>,
+    basketsByHole: Map<Long, List<HoleBasketEntity>>,
     layoutHoles: List<LayoutHoleWithHole>,
     onBack: () -> Unit,
-    onAddHoleToLayout: (Long) -> Unit,
+    onAddHoleToLayout: (Long, Long?, Long?) -> Unit,
     onRemoveHoleFromLayout: (Long, Int) -> Unit,
     onMoveHoleUp: (Int) -> Unit,
     onMoveHoleDown: (Int) -> Unit
@@ -1675,10 +1681,14 @@ fun LayoutDetailScreen(
     if (showAddHoleDialog) {
         AddHoleToLayoutDialog(
             availableHoles = availableHoles,
-            alreadyIncludedHoleIds = layoutHoles.map { it.holeId }.toSet(),
+            teesByHole = teesByHole,
+            basketsByHole = basketsByHole,
+            alreadyIncludedCombinations = layoutHoles.map {
+                Triple(it.holeId, it.teeId, it.basketId)
+            }.toSet(),
             onDismiss = { showAddHoleDialog = false },
-            onConfirm = { holeId ->
-                onAddHoleToLayout(holeId)
+            onConfirm = { holeId, teeId, basketId ->
+                onAddHoleToLayout(holeId, teeId, basketId)
                 showAddHoleDialog = false
             }
         )
@@ -1712,6 +1722,18 @@ fun LayoutHoleRow(
                 text = "Längd: ${item.lengthMeters} m, Par: ${item.parValue}",
                 style = MaterialTheme.typography.bodyMedium
             )
+
+            val variantText = buildList {
+                if (!item.teeName.isNullOrBlank()) add("Utkast: ${item.teeName}")
+                if (!item.basketName.isNullOrBlank()) add("Korg: ${item.basketName}")
+            }.joinToString(" | ")
+
+            if (variantText.isNotBlank()) {
+                Text(
+                    text = variantText,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
 
         Column {
@@ -1748,50 +1770,110 @@ fun LayoutHoleRow(
 @Composable
 fun AddHoleToLayoutDialog(
     availableHoles: List<HoleEntity>,
-    alreadyIncludedHoleIds: Set<Long>,
+    teesByHole: Map<Long, List<HoleTeeEntity>>,
+    basketsByHole: Map<Long, List<HoleBasketEntity>>,
+    alreadyIncludedCombinations: Set<Triple<Long, Long?, Long?>>,
     onDismiss: () -> Unit,
-    onConfirm: (Long) -> Unit
+    onConfirm: (Long, Long?, Long?) -> Unit
 ) {
-    val selectableHoles = availableHoles.filter { it.id !in alreadyIncludedHoleIds }
     var selectedHoleId by remember { mutableStateOf<Long?>(null) }
+    var selectedTeeId by remember { mutableStateOf<Long?>(null) }
+    var selectedBasketId by remember { mutableStateOf<Long?>(null) }
+
+    val selectedHole = availableHoles.firstOrNull { it.id == selectedHoleId }
+    val availableTees = selectedHole?.let { teesByHole[it.id] ?: emptyList() } ?: emptyList()
+    val availableBaskets = selectedHole?.let { basketsByHole[it.id] ?: emptyList() } ?: emptyList()
+
+    LaunchedEffect(selectedHoleId) {
+        selectedTeeId = when {
+            availableTees.size == 1 -> availableTees.first().id
+            availableTees.isEmpty() -> null
+            else -> null
+        }
+        selectedBasketId = when {
+            availableBaskets.size == 1 -> availableBaskets.first().id
+            availableBaskets.isEmpty() -> null
+            else -> null
+        }
+    }
+
+    val currentCombinationAllowed = selectedHoleId != null &&
+            Triple(selectedHoleId!!, selectedTeeId, selectedBasketId) !in alreadyIncludedCombinations
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Lägg till hål i layout") },
         text = {
-            if (selectableHoles.isEmpty()) {
-                Text("Alla hål på banan finns redan i layouten.")
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    selectableHoles.forEach { hole ->
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Hål", style = MaterialTheme.typography.titleMedium)
+
+                availableHoles.forEach { hole ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedHoleId = hole.id }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(if (selectedHoleId == hole.id) "●" else "○")
+                        Text(
+                            "Hål ${hole.holeNumber}" +
+                                    (hole.name?.let { " - $it" } ?: "") +
+                                    " (${hole.lengthMeters} m, par ${hole.parValue})"
+                        )
+                    }
+                }
+
+                if (selectedHole != null && availableTees.isNotEmpty()) {
+                    Text("Utkast", style = MaterialTheme.typography.titleMedium)
+
+                    availableTees.forEach { tee ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedHoleId = hole.id }
-                                .padding(vertical = 6.dp),
+                                .clickable { selectedTeeId = tee.id }
+                                .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = if (selectedHoleId == hole.id) "●" else "○",
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                text = "Hål ${hole.holeNumber}" +
-                                        (hole.name?.let { " - $it" } ?: "") +
-                                        " (${hole.lengthMeters} m, par ${hole.parValue})",
-                                style = MaterialTheme.typography.bodyLarge
-                            )
+                            Text(if (selectedTeeId == tee.id) "●" else "○")
+                            Text(tee.name)
                         }
                     }
+                }
+
+                if (selectedHole != null && availableBaskets.isNotEmpty()) {
+                    Text("Korgplacering", style = MaterialTheme.typography.titleMedium)
+
+                    availableBaskets.forEach { basket ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedBasketId = basket.id }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(if (selectedBasketId == basket.id) "●" else "○")
+                            Text(basket.name)
+                        }
+                    }
+                }
+
+                if (selectedHoleId != null && !currentCombinationAllowed) {
+                    Text(
+                        text = "Den kombinationen finns redan i layouten.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    selectedHoleId?.let(onConfirm)
+                    selectedHoleId?.let { holeId ->
+                        onConfirm(holeId, selectedTeeId, selectedBasketId)
+                    }
                 },
-                enabled = selectedHoleId != null && selectableHoles.isNotEmpty()
+                enabled = selectedHoleId != null && currentCombinationAllowed
             ) {
                 Text("Spara")
             }

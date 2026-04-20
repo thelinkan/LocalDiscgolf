@@ -31,7 +31,7 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
         SessionPlayerEntity::class,
         SessionPlayerHoleEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

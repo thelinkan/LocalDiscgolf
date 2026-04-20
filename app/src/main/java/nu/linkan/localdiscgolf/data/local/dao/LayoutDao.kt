@@ -36,19 +36,50 @@ interface LayoutDao {
             lh.id AS layoutHoleId,
             lh.layout_id AS layoutId,
             lh.sequence_number AS sequenceNumber,
-            h.id AS holeId,
+            lh.hole_id AS holeId,
+            lh.tee_id AS teeId,
+            lh.basket_id AS basketId,
             h.hole_number AS holeNumber,
             h.name AS holeName,
             h.length_meters AS lengthMeters,
             h.par_value AS parValue,
-            h.notes AS holeNotes
+            h.notes AS holeNotes,
+            ht.name AS teeName,
+            hb.name AS basketName
         FROM layout_hole lh
         INNER JOIN hole h ON h.id = lh.hole_id
+        LEFT JOIN hole_tee ht ON ht.id = lh.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = lh.basket_id
         WHERE lh.layout_id = :layoutId
           AND h.is_active = 1
         ORDER BY lh.sequence_number
     """)
     fun observeLayoutHoles(layoutId: Long): Flow<List<LayoutHoleWithHole>>
+
+    @Query("""
+        SELECT
+            lh.id AS layoutHoleId,
+            lh.layout_id AS layoutId,
+            lh.sequence_number AS sequenceNumber,
+            lh.hole_id AS holeId,
+            lh.tee_id AS teeId,
+            lh.basket_id AS basketId,
+            h.hole_number AS holeNumber,
+            h.name AS holeName,
+            h.length_meters AS lengthMeters,
+            h.par_value AS parValue,
+            h.notes AS holeNotes,
+            ht.name AS teeName,
+            hb.name AS basketName
+        FROM layout_hole lh
+        INNER JOIN hole h ON h.id = lh.hole_id
+        LEFT JOIN hole_tee ht ON ht.id = lh.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = lh.basket_id
+        WHERE lh.layout_id = :layoutId
+          AND h.is_active = 1
+        ORDER BY lh.sequence_number
+    """)
+    suspend fun getLayoutHolesOnce(layoutId: Long): List<LayoutHoleWithHole>
 
     @Query("""
         SELECT COALESCE(MAX(sequence_number), 0)
@@ -77,26 +108,6 @@ interface LayoutDao {
           AND sequence_number > :deletedSequenceNumber
     """)
     suspend fun closeGapAfterDelete(layoutId: Long, deletedSequenceNumber: Int)
-
-    @Query("""
-    SELECT
-        lh.id AS layoutHoleId,
-        lh.layout_id AS layoutId,
-        lh.sequence_number AS sequenceNumber,
-        h.id AS holeId,
-        h.hole_number AS holeNumber,
-        h.name AS holeName,
-        h.length_meters AS lengthMeters,
-        h.par_value AS parValue,
-        h.notes AS holeNotes
-    FROM layout_hole lh
-    INNER JOIN hole h ON h.id = lh.hole_id
-    WHERE lh.layout_id = :layoutId
-      AND h.is_active = 1
-    ORDER BY lh.sequence_number
-""")
-    suspend fun getLayoutHolesOnce(layoutId: Long): List<LayoutHoleWithHole>
-
 
     @Transaction
     suspend fun swapLayoutHoleSequences(

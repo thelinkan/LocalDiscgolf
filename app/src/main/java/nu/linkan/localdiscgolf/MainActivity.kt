@@ -84,6 +84,8 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleVariantEntity
+import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -121,6 +123,7 @@ class MainActivity : ComponentActivity() {
                 val roundHoleStatsByKey = remember { mutableStateMapOf<String, List<RoundHolePlayerStatsRow>>() }
                 val teesByHole = remember { mutableStateMapOf<Long, List<HoleTeeEntity>>() }
                 val basketsByHole = remember { mutableStateMapOf<Long, List<HoleBasketEntity>>() }
+                val variantsByHole = remember { mutableStateMapOf<Long, List<HoleVariantWithNames>>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -156,6 +159,8 @@ class MainActivity : ComponentActivity() {
                     roundHoleStatsByKey = roundHoleStatsByKey,
                     teesByHole = teesByHole,
                     basketsByHole = basketsByHole,
+                    variantsByHole = variantsByHole,
+
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -270,7 +275,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHoleToLayout = { layoutId, holeId, teeId, basketId ->
+                    onAddHoleToLayout = { layoutId, holeId, holeVariantId ->
                         lifecycleScope.launch {
                             val nextSequence = layoutDao.getMaxSequenceNumber(layoutId) + 1
                             layoutDao.insertLayoutHole(
@@ -278,8 +283,7 @@ class MainActivity : ComponentActivity() {
                                     layoutId = layoutId,
                                     sequenceNumber = nextSequence,
                                     holeId = holeId,
-                                    teeId = teeId,
-                                    basketId = basketId
+                                    holeVariantId = holeVariantId
                                 )
                             )
                         }
@@ -445,6 +449,29 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    observeHoleVariants = { holeId ->
+                        lifecycleScope.launch {
+                            holeDao.observeActiveVariantsForHole(holeId).collectLatest { variants ->
+                                variantsByHole[holeId] = variants
+                            }
+                        }
+                    },
+                    onAddHoleVariant = { holeId, teeId, basketId, lengthMeters, parValue ->
+                        lifecycleScope.launch {
+                            val now = System.currentTimeMillis()
+                            holeDao.insertHoleVariant(
+                                HoleVariantEntity(
+                                    holeId = holeId,
+                                    teeId = teeId,
+                                    basketId = basketId,
+                                    lengthMeters = lengthMeters,
+                                    parValue = parValue,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            )
+                        }
+                    },
                     onFinishRound = { playSessionId ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -487,7 +514,7 @@ fun AppNavHost(
     observeCourseLayouts: (Long) -> Unit,
     onAddLayout: (Long, String, String?) -> Unit,
     observeLayoutHoles: (Long) -> Unit,
-    onAddHoleToLayout: (Long, Long, Long?, Long?) -> Unit,
+    onAddHoleToLayout: (Long, Long, Long?) -> Unit,
     onRemoveHoleFromLayout: (Long, Int, Long) -> Unit,
     onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
@@ -516,6 +543,9 @@ fun AppNavHost(
     observeHoleBaskets: (Long) -> Unit,
     onAddHoleTee: (Long, String) -> Unit,
     onAddHoleBasket: (Long, String) -> Unit,
+    variantsByHole: Map<Long, List<HoleVariantWithNames>>,
+    observeHoleVariants: (Long) -> Unit,
+    onAddHoleVariant: (Long, Long, Long, Int, Int) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -575,6 +605,7 @@ fun AppNavHost(
                     layouts = layouts,
                     teesByHole = teesByHole,
                     basketsByHole = basketsByHole,
+                    variantsByHole = variantsByHole,
                     onBack = { navController.popBackStack() },
                     onAddHole = { holeNumber, name, lengthMeters, parValue, notes ->
                         onAddHole(courseId, holeNumber, name, lengthMeters, parValue, notes)
@@ -600,8 +631,10 @@ fun AppNavHost(
                     },
                     observeHoleTees = observeHoleTees,
                     observeHoleBaskets = observeHoleBaskets,
+                    observeHoleVariants = observeHoleVariants,
                     onAddHoleTee = onAddHoleTee,
-                    onAddHoleBasket = onAddHoleBasket
+                    onAddHoleBasket = onAddHoleBasket,
+                    onAddHoleVariant = onAddHoleVariant
                 )
             }
         }
@@ -664,12 +697,11 @@ fun AppNavHost(
                 LayoutDetailScreen(
                     layout = currentLayout,
                     availableHoles = courseHoles,
-                    teesByHole = teesByHole,
-                    basketsByHole = basketsByHole,
+                    variantsByHole = variantsByHole,
                     layoutHoles = layoutHoles,
                     onBack = { navController.popBackStack() },
-                    onAddHoleToLayout = { holeId, teeId, basketId ->
-                        onAddHoleToLayout(layoutId, holeId, teeId, basketId)
+                    onAddHoleToLayout = { holeId, holeVariantId ->
+                        onAddHoleToLayout(layoutId, holeId, holeVariantId)
                     },
                     onRemoveHoleFromLayout = { layoutHoleId, sequenceNumber ->
                         onRemoveHoleFromLayout(layoutHoleId, sequenceNumber, layoutId)
@@ -1382,6 +1414,7 @@ fun CourseDetailScreen(
     layouts: List<LayoutEntity>,
     teesByHole: Map<Long, List<HoleTeeEntity>>,
     basketsByHole: Map<Long, List<HoleBasketEntity>>,
+    variantsByHole: Map<Long, List<HoleVariantWithNames>>,
     onBack: () -> Unit,
     onAddHole: (Int, String?, Int, Int, String?) -> Unit,
     onUpdateHole: (HoleEntity) -> Unit,
@@ -1389,8 +1422,10 @@ fun CourseDetailScreen(
     onLayoutClick: (Long) -> Unit,
     observeHoleTees: (Long) -> Unit,
     observeHoleBaskets: (Long) -> Unit,
+    observeHoleVariants: (Long) -> Unit,
     onAddHoleTee: (Long, String) -> Unit,
-    onAddHoleBasket: (Long, String) -> Unit
+    onAddHoleBasket: (Long, String) -> Unit,
+    onAddHoleVariant: (Long, Long, Long, Int, Int) -> Unit
 ) {
     var showAddHoleDialog by remember { mutableStateOf(false) }
     var showAddLayoutDialog by remember { mutableStateOf(false) }
@@ -1448,6 +1483,7 @@ fun CourseDetailScreen(
                     onClick = {
                         observeHoleTees(hole.id)
                         observeHoleBaskets(hole.id)
+                        observeHoleVariants(hole.id)
                         holeForVariants = hole
                     },
                     onEditClick = { holeToEdit = hole }
@@ -1545,9 +1581,13 @@ fun CourseDetailScreen(
             hole = hole,
             tees = teesByHole[hole.id] ?: emptyList(),
             baskets = basketsByHole[hole.id] ?: emptyList(),
+            variants = variantsByHole[hole.id] ?: emptyList(),
             onDismiss = { holeForVariants = null },
             onAddTee = { name -> onAddHoleTee(hole.id, name) },
-            onAddBasket = { name -> onAddHoleBasket(hole.id, name) }
+            onAddBasket = { name -> onAddHoleBasket(hole.id, name) },
+            onAddVariant = { teeId, basketId, lengthMeters, parValue ->
+                onAddHoleVariant(hole.id, teeId, basketId, lengthMeters, parValue)
+            }
         )
     }
 }
@@ -1606,15 +1646,14 @@ fun AddLayoutDialog(
 fun LayoutDetailScreen(
     layout: LayoutEntity,
     availableHoles: List<HoleEntity>,
-    teesByHole: Map<Long, List<HoleTeeEntity>>,
-    basketsByHole: Map<Long, List<HoleBasketEntity>>,
+    variantsByHole: Map<Long, List<HoleVariantWithNames>>,
     layoutHoles: List<LayoutHoleWithHole>,
     onBack: () -> Unit,
-    onAddHoleToLayout: (Long, Long?, Long?) -> Unit,
+    onAddHoleToLayout: (Long, Long?) -> Unit,
     onRemoveHoleFromLayout: (Long, Int) -> Unit,
     onMoveHoleUp: (Int) -> Unit,
     onMoveHoleDown: (Int) -> Unit
-) {
+){
     var showAddHoleDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -1681,14 +1720,13 @@ fun LayoutDetailScreen(
     if (showAddHoleDialog) {
         AddHoleToLayoutDialog(
             availableHoles = availableHoles,
-            teesByHole = teesByHole,
-            basketsByHole = basketsByHole,
+            variantsByHole = variantsByHole,
             alreadyIncludedCombinations = layoutHoles.map {
-                Triple(it.holeId, it.teeId, it.basketId)
+                it.holeId to it.holeVariantId
             }.toSet(),
             onDismiss = { showAddHoleDialog = false },
-            onConfirm = { holeId, teeId, basketId ->
-                onAddHoleToLayout(holeId, teeId, basketId)
+            onConfirm = { holeId, holeVariantId ->
+                onAddHoleToLayout(holeId, holeVariantId)
                 showAddHoleDialog = false
             }
         )
@@ -1770,35 +1808,27 @@ fun LayoutHoleRow(
 @Composable
 fun AddHoleToLayoutDialog(
     availableHoles: List<HoleEntity>,
-    teesByHole: Map<Long, List<HoleTeeEntity>>,
-    basketsByHole: Map<Long, List<HoleBasketEntity>>,
-    alreadyIncludedCombinations: Set<Triple<Long, Long?, Long?>>,
+    variantsByHole: Map<Long, List<HoleVariantWithNames>>,
+    alreadyIncludedCombinations: Set<Pair<Long, Long?>>,
     onDismiss: () -> Unit,
-    onConfirm: (Long, Long?, Long?) -> Unit
+    onConfirm: (Long, Long?) -> Unit
 ) {
     var selectedHoleId by remember { mutableStateOf<Long?>(null) }
-    var selectedTeeId by remember { mutableStateOf<Long?>(null) }
-    var selectedBasketId by remember { mutableStateOf<Long?>(null) }
+    var selectedVariantId by remember { mutableStateOf<Long?>(null) }
 
     val selectedHole = availableHoles.firstOrNull { it.id == selectedHoleId }
-    val availableTees = selectedHole?.let { teesByHole[it.id] ?: emptyList() } ?: emptyList()
-    val availableBaskets = selectedHole?.let { basketsByHole[it.id] ?: emptyList() } ?: emptyList()
+    val availableVariants = selectedHole?.let { variantsByHole[it.id] ?: emptyList() } ?: emptyList()
 
     LaunchedEffect(selectedHoleId) {
-        selectedTeeId = when {
-            availableTees.size == 1 -> availableTees.first().id
-            availableTees.isEmpty() -> null
-            else -> null
-        }
-        selectedBasketId = when {
-            availableBaskets.size == 1 -> availableBaskets.first().id
-            availableBaskets.isEmpty() -> null
+        selectedVariantId = when {
+            availableVariants.size == 1 -> availableVariants.first().id
+            availableVariants.isEmpty() -> null
             else -> null
         }
     }
 
-    val currentCombinationAllowed = selectedHoleId != null &&
-            Triple(selectedHoleId!!, selectedTeeId, selectedBasketId) !in alreadyIncludedCombinations
+    val currentAllowed = selectedHoleId != null &&
+            (selectedHoleId!! to selectedVariantId) !in alreadyIncludedCombinations
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1816,53 +1846,29 @@ fun AddHoleToLayoutDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(if (selectedHoleId == hole.id) "●" else "○")
-                        Text(
-                            "Hål ${hole.holeNumber}" +
-                                    (hole.name?.let { " - $it" } ?: "") +
-                                    " (${hole.lengthMeters} m, par ${hole.parValue})"
-                        )
+                        Text("Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""))
                     }
                 }
 
-                if (selectedHole != null && availableTees.isNotEmpty()) {
-                    Text("Utkast", style = MaterialTheme.typography.titleMedium)
+                if (selectedHole != null && availableVariants.isNotEmpty()) {
+                    Text("Variant", style = MaterialTheme.typography.titleMedium)
 
-                    availableTees.forEach { tee ->
+                    availableVariants.forEach { variant ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedTeeId = tee.id }
+                                .clickable { selectedVariantId = variant.id }
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(if (selectedTeeId == tee.id) "●" else "○")
-                            Text(tee.name)
+                            Text(if (selectedVariantId == variant.id) "●" else "○")
+                            Text("${variant.teeName} → ${variant.basketName} | ${variant.lengthMeters} m | par ${variant.parValue}")
                         }
                     }
                 }
 
-                if (selectedHole != null && availableBaskets.isNotEmpty()) {
-                    Text("Korgplacering", style = MaterialTheme.typography.titleMedium)
-
-                    availableBaskets.forEach { basket ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedBasketId = basket.id }
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(if (selectedBasketId == basket.id) "●" else "○")
-                            Text(basket.name)
-                        }
-                    }
-                }
-
-                if (selectedHoleId != null && !currentCombinationAllowed) {
-                    Text(
-                        text = "Den kombinationen finns redan i layouten.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                if (selectedHoleId != null && !currentAllowed) {
+                    Text("Den kombinationen finns redan i layouten.")
                 }
             }
         },
@@ -1870,10 +1876,10 @@ fun AddHoleToLayoutDialog(
             TextButton(
                 onClick = {
                     selectedHoleId?.let { holeId ->
-                        onConfirm(holeId, selectedTeeId, selectedBasketId)
+                        onConfirm(holeId, selectedVariantId)
                     }
                 },
-                enabled = selectedHoleId != null && currentCombinationAllowed
+                enabled = selectedHoleId != null && currentAllowed
             ) {
                 Text("Spara")
             }
@@ -1939,12 +1945,15 @@ fun HoleVariantsDialog(
     hole: HoleEntity,
     tees: List<HoleTeeEntity>,
     baskets: List<HoleBasketEntity>,
+    variants: List<HoleVariantWithNames>,
     onDismiss: () -> Unit,
     onAddTee: (String) -> Unit,
-    onAddBasket: (String) -> Unit
+    onAddBasket: (String) -> Unit,
+    onAddVariant: (Long, Long, Int, Int) -> Unit
 ) {
     var showAddTeeDialog by remember { mutableStateOf(false) }
     var showAddBasketDialog by remember { mutableStateOf(false) }
+    var showAddVariantDialog by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1954,13 +1963,10 @@ fun HoleVariantsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Utkast", style = MaterialTheme.typography.titleMedium)
-
                 if (tees.isEmpty()) {
                     Text("Inga utkast ännu.")
                 } else {
-                    tees.forEach { tee ->
-                        Text("• ${tee.name}")
-                    }
+                    tees.forEach { Text("• ${it.name}") }
                 }
 
                 Button(
@@ -1973,13 +1979,10 @@ fun HoleVariantsDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text("Korgplaceringar", style = MaterialTheme.typography.titleMedium)
-
                 if (baskets.isEmpty()) {
                     Text("Inga korgplaceringar ännu.")
                 } else {
-                    baskets.forEach { basket ->
-                        Text("• ${basket.name}")
-                    }
+                    baskets.forEach { Text("• ${it.name}") }
                 }
 
                 Button(
@@ -1987,6 +1990,25 @@ fun HoleVariantsDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Ny korgplacering")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Varianter", style = MaterialTheme.typography.titleMedium)
+                if (variants.isEmpty()) {
+                    Text("Inga varianter ännu.")
+                } else {
+                    variants.forEach { variant ->
+                        Text("• ${variant.teeName} → ${variant.basketName} | ${variant.lengthMeters} m | par ${variant.parValue}")
+                    }
+                }
+
+                Button(
+                    onClick = { showAddVariantDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = tees.isNotEmpty() && baskets.isNotEmpty()
+                ) {
+                    Text("Ny variant")
                 }
             }
         },
@@ -2002,8 +2024,8 @@ fun HoleVariantsDialog(
             title = "Nytt utkast",
             label = "Namn",
             onDismiss = { showAddTeeDialog = false },
-            onConfirm = { name ->
-                onAddTee(name)
+            onConfirm = {
+                onAddTee(it)
                 showAddTeeDialog = false
             }
         )
@@ -2014,12 +2036,123 @@ fun HoleVariantsDialog(
             title = "Ny korgplacering",
             label = "Namn",
             onDismiss = { showAddBasketDialog = false },
-            onConfirm = { name ->
-                onAddBasket(name)
+            onConfirm = {
+                onAddBasket(it)
                 showAddBasketDialog = false
             }
         )
     }
+
+    if (showAddVariantDialog) {
+        AddHoleVariantDialog(
+            tees = tees,
+            baskets = baskets,
+            existingCombinations = variants.map { it.teeId to it.basketId }.toSet(),
+            onDismiss = { showAddVariantDialog = false },
+            onConfirm = { teeId, basketId, lengthMeters, parValue ->
+                onAddVariant(teeId, basketId, lengthMeters, parValue)
+                showAddVariantDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun AddHoleVariantDialog(
+    tees: List<HoleTeeEntity>,
+    baskets: List<HoleBasketEntity>,
+    existingCombinations: Set<Pair<Long, Long>>,
+    onDismiss: () -> Unit,
+    onConfirm: (Long, Long, Int, Int) -> Unit
+) {
+    var selectedTeeId by remember { mutableStateOf<Long?>(null) }
+    var selectedBasketId by remember { mutableStateOf<Long?>(null) }
+    var lengthText by remember { mutableStateOf("") }
+    var parText by remember { mutableStateOf("") }
+
+    val duplicate = selectedTeeId != null &&
+            selectedBasketId != null &&
+            (selectedTeeId!! to selectedBasketId!!) in existingCombinations
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ny variant") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Utkast", style = MaterialTheme.typography.titleMedium)
+                tees.forEach { tee ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedTeeId = tee.id }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(if (selectedTeeId == tee.id) "●" else "○")
+                        Text(tee.name)
+                    }
+                }
+
+                Text("Korgplacering", style = MaterialTheme.typography.titleMedium)
+                baskets.forEach { basket ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedBasketId = basket.id }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(if (selectedBasketId == basket.id) "●" else "○")
+                        Text(basket.name)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = lengthText,
+                    onValueChange = { lengthText = it },
+                    label = { Text("Längd i meter") },
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = parText,
+                    onValueChange = { parText = it },
+                    label = { Text("Par") },
+                    singleLine = true
+                )
+
+                if (duplicate) {
+                    Text("Den kombinationen finns redan.")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val teeId = selectedTeeId
+                    val basketId = selectedBasketId
+                    val lengthMeters = lengthText.toIntOrNull()
+                    val parValue = parText.toIntOrNull()
+
+                    if (teeId != null &&
+                        basketId != null &&
+                        lengthMeters != null &&
+                        parValue != null &&
+                        !duplicate
+                    ) {
+                        onConfirm(teeId, basketId, lengthMeters, parValue)
+                    }
+                }
+            ) {
+                Text("Spara")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Avbryt")
+            }
+        }
+    )
 }
 
 @Composable

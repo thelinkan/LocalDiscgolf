@@ -37,19 +37,19 @@ interface LayoutDao {
             lh.layout_id AS layoutId,
             lh.sequence_number AS sequenceNumber,
             lh.hole_id AS holeId,
-            lh.tee_id AS teeId,
-            lh.basket_id AS basketId,
+            lh.hole_variant_id AS holeVariantId,
             h.hole_number AS holeNumber,
             h.name AS holeName,
-            h.length_meters AS lengthMeters,
-            h.par_value AS parValue,
+            COALESCE(hv.length_meters, h.length_meters) AS lengthMeters,
+            COALESCE(hv.par_value, h.par_value) AS parValue,
             h.notes AS holeNotes,
             ht.name AS teeName,
             hb.name AS basketName
         FROM layout_hole lh
         INNER JOIN hole h ON h.id = lh.hole_id
-        LEFT JOIN hole_tee ht ON ht.id = lh.tee_id
-        LEFT JOIN hole_basket hb ON hb.id = lh.basket_id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
         WHERE lh.layout_id = :layoutId
           AND h.is_active = 1
         ORDER BY lh.sequence_number
@@ -62,19 +62,19 @@ interface LayoutDao {
             lh.layout_id AS layoutId,
             lh.sequence_number AS sequenceNumber,
             lh.hole_id AS holeId,
-            lh.tee_id AS teeId,
-            lh.basket_id AS basketId,
+            lh.hole_variant_id AS holeVariantId,
             h.hole_number AS holeNumber,
             h.name AS holeName,
-            h.length_meters AS lengthMeters,
-            h.par_value AS parValue,
+            COALESCE(hv.length_meters, h.length_meters) AS lengthMeters,
+            COALESCE(hv.par_value, h.par_value) AS parValue,
             h.notes AS holeNotes,
             ht.name AS teeName,
             hb.name AS basketName
         FROM layout_hole lh
         INNER JOIN hole h ON h.id = lh.hole_id
-        LEFT JOIN hole_tee ht ON ht.id = lh.tee_id
-        LEFT JOIN hole_basket hb ON hb.id = lh.basket_id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
         WHERE lh.layout_id = :layoutId
           AND h.is_active = 1
         ORDER BY lh.sequence_number

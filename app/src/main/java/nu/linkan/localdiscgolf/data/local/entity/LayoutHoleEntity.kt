@@ -24,27 +24,19 @@ import androidx.room.PrimaryKey
             onUpdate = ForeignKey.NO_ACTION
         ),
         ForeignKey(
-            entity = HoleTeeEntity::class,
+            entity = HoleVariantEntity::class,
             parentColumns = ["id"],
-            childColumns = ["tee_id"],
-            onDelete = ForeignKey.RESTRICT,
-            onUpdate = ForeignKey.NO_ACTION
-        ),
-        ForeignKey(
-            entity = HoleBasketEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["basket_id"],
+            childColumns = ["hole_variant_id"],
             onDelete = ForeignKey.RESTRICT,
             onUpdate = ForeignKey.NO_ACTION
         )
     ],
     indices = [
         Index(value = ["layout_id", "sequence_number"], unique = true),
-        Index(value = ["layout_id", "hole_id", "tee_id", "basket_id"], unique = true),
+        Index(value = ["layout_id", "hole_variant_id"], unique = true),
         Index(value = ["layout_id"]),
         Index(value = ["hole_id"]),
-        Index(value = ["tee_id"]),
-        Index(value = ["basket_id"])
+        Index(value = ["hole_variant_id"])
     ]
 )
 data class LayoutHoleEntity(
@@ -60,9 +52,6 @@ data class LayoutHoleEntity(
     @ColumnInfo(name = "hole_id")
     val holeId: Long,
 
-    @ColumnInfo(name = "tee_id")
-    val teeId: Long? = null,
-
-    @ColumnInfo(name = "basket_id")
-    val basketId: Long? = null
+    @ColumnInfo(name = "hole_variant_id")
+    val holeVariantId: Long? = null
 )

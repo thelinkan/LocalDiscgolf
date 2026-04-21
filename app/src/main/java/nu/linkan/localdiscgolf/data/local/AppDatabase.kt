@@ -11,6 +11,7 @@ import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
+import nu.linkan.localdiscgolf.data.local.entity.HoleVariantEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutEntity
 import nu.linkan.localdiscgolf.data.local.entity.LayoutHoleEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
@@ -25,13 +26,14 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
         HoleEntity::class,
         HoleTeeEntity::class,
         HoleBasketEntity::class,
+        HoleVariantEntity::class,
         LayoutEntity::class,
         LayoutHoleEntity::class,
         PlaySessionEntity::class,
         SessionPlayerEntity::class,
         SessionPlayerHoleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

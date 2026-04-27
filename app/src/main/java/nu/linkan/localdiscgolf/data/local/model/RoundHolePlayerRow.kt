@@ -7,8 +7,11 @@ data class RoundHolePlayerRow(
     val playerName: String?,
     val sequenceNumber: Int,
     val holeId: Long,
+    val holeVariantId: Long?,
     val holeNumberSnapshot: Int,
     val holeNameSnapshot: String?,
+    val teeNameSnapshot: String?,
+    val basketNameSnapshot: String?,
     val lengthSnapshotMeters: Int,
     val parSnapshot: Int,
     val throwsCount: Int?

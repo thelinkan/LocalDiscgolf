@@ -3015,6 +3015,17 @@ fun RoundHoleScreen(
                             (header.holeNameSnapshot?.let { " - $it" } ?: ""),
                     style = MaterialTheme.typography.headlineSmall
                 )
+                val variantText = buildList {
+                    if (!header?.teeNameSnapshot.isNullOrBlank()) add("Utkast: ${header?.teeNameSnapshot}")
+                    if (!header?.basketNameSnapshot.isNullOrBlank()) add("Korg: ${header?.basketNameSnapshot}")
+                }.joinToString(" | ")
+
+                if (variantText.isNotBlank()) {
+                    Text(
+                        text = variantText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 Text(
                     text = "Längd: ${header.lengthSnapshotMeters} m, Par: ${header.parSnapshot}",
                     style = MaterialTheme.typography.bodyLarge

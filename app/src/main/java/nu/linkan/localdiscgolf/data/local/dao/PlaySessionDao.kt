@@ -32,24 +32,27 @@ interface PlaySessionDao {
     suspend fun insertSessionPlayerHoles(sessionPlayerHoles: List<SessionPlayerHoleEntity>)
 
     @Query("""
-        SELECT
-            sph.id AS sessionPlayerHoleId,
-            sp.id AS sessionPlayerId,
-            sp.player_id AS playerId,
-            sp.display_name AS playerName,
-            sph.sequence_number AS sequenceNumber,
-            sph.hole_id AS holeId,
-            sph.hole_number_snapshot AS holeNumberSnapshot,
-            sph.hole_name_snapshot AS holeNameSnapshot,
-            sph.length_snapshot_meters AS lengthSnapshotMeters,
-            sph.par_snapshot AS parSnapshot,
-            sph.throws_count AS throwsCount
-        FROM session_player_hole sph
-        INNER JOIN session_player sp ON sp.id = sph.session_player_id
-        WHERE sp.play_session_id = :playSessionId
-          AND sph.sequence_number = :sequenceNumber
-        ORDER BY sp.start_order, sp.id
-    """)
+    SELECT
+        sph.id AS sessionPlayerHoleId,
+        sp.id AS sessionPlayerId,
+        sp.player_id AS playerId,
+        sp.display_name AS playerName,
+        sph.sequence_number AS sequenceNumber,
+        sph.hole_id AS holeId,
+        sph.hole_variant_id AS holeVariantId,
+        sph.hole_number_snapshot AS holeNumberSnapshot,
+        sph.hole_name_snapshot AS holeNameSnapshot,
+        sph.tee_name_snapshot AS teeNameSnapshot,
+        sph.basket_name_snapshot AS basketNameSnapshot,
+        sph.length_snapshot_meters AS lengthSnapshotMeters,
+        sph.par_snapshot AS parSnapshot,
+        sph.throws_count AS throwsCount
+    FROM session_player_hole sph
+    INNER JOIN session_player sp ON sp.id = sph.session_player_id
+    WHERE sp.play_session_id = :playSessionId
+      AND sph.sequence_number = :sequenceNumber
+    ORDER BY sp.start_order, sp.id
+""")
     fun observeRoundHoleRows(
         playSessionId: Long,
         sequenceNumber: Int
@@ -99,7 +102,10 @@ interface PlaySessionDao {
         sp.display_name AS playerName,
         sp.start_order AS startOrder,
         sph.sequence_number AS sequenceNumber,
+        sph.hole_variant_id AS holeVariantId,
         sph.hole_number_snapshot AS holeNumberSnapshot,
+        sph.tee_name_snapshot AS teeNameSnapshot,
+        sph.basket_name_snapshot AS basketNameSnapshot,
         sph.length_snapshot_meters AS lengthSnapshotMeters,
         sph.par_snapshot AS parSnapshot,
         sph.throws_count AS throwsCount
@@ -308,8 +314,11 @@ interface PlaySessionDao {
                     sequenceNumber = layoutHole.sequenceNumber,
                     courseId = courseId,
                     holeId = layoutHole.holeId,
+                    holeVariantId = layoutHole.holeVariantId,
                     holeNumberSnapshot = layoutHole.holeNumber,
                     holeNameSnapshot = layoutHole.holeName,
+                    teeNameSnapshot = layoutHole.teeName,
+                    basketNameSnapshot = layoutHole.basketName,
                     lengthSnapshotMeters = layoutHole.lengthMeters,
                     parSnapshot = layoutHole.parValue,
                     createdAt = createdAt,

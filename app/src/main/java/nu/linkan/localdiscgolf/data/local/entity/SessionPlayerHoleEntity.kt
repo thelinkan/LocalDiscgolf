@@ -29,13 +29,21 @@ import androidx.room.PrimaryKey
             childColumns = ["hole_id"],
             onDelete = ForeignKey.RESTRICT,
             onUpdate = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = HoleVariantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["hole_variant_id"],
+            onDelete = ForeignKey.RESTRICT,
+            onUpdate = ForeignKey.NO_ACTION
         )
     ],
     indices = [
         Index(value = ["session_player_id", "sequence_number"], unique = true),
         Index(value = ["session_player_id"]),
+        Index(value = ["course_id"]),
         Index(value = ["hole_id"]),
-        Index(value = ["course_id"])
+        Index(value = ["hole_variant_id"])
     ]
 )
 data class SessionPlayerHoleEntity(
@@ -54,11 +62,20 @@ data class SessionPlayerHoleEntity(
     @ColumnInfo(name = "hole_id")
     val holeId: Long,
 
+    @ColumnInfo(name = "hole_variant_id")
+    val holeVariantId: Long? = null,
+
     @ColumnInfo(name = "hole_number_snapshot")
     val holeNumberSnapshot: Int,
 
     @ColumnInfo(name = "hole_name_snapshot")
     val holeNameSnapshot: String? = null,
+
+    @ColumnInfo(name = "tee_name_snapshot")
+    val teeNameSnapshot: String? = null,
+
+    @ColumnInfo(name = "basket_name_snapshot")
+    val basketNameSnapshot: String? = null,
 
     @ColumnInfo(name = "length_snapshot_meters")
     val lengthSnapshotMeters: Int,
@@ -71,8 +88,6 @@ data class SessionPlayerHoleEntity(
 
     @ColumnInfo(name = "is_completed")
     val isCompleted: Boolean = false,
-
-    val notes: String? = null,
 
     @ColumnInfo(name = "created_at")
     val createdAt: Long,

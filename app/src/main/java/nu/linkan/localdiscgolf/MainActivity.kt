@@ -89,6 +89,7 @@ import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.text.get
 
 class MainActivity : ComponentActivity() {
 
@@ -1431,6 +1432,7 @@ fun CourseDetailScreen(
     var showAddLayoutDialog by remember { mutableStateOf(false) }
     var holeToEdit by remember { mutableStateOf<HoleEntity?>(null) }
     var holeForVariants by remember { mutableStateOf<HoleEntity?>(null) }
+    var holeForNewVariant by remember { mutableStateOf<HoleEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -1585,8 +1587,24 @@ fun CourseDetailScreen(
             onDismiss = { holeForVariants = null },
             onAddTee = { name -> onAddHoleTee(hole.id, name) },
             onAddBasket = { name -> onAddHoleBasket(hole.id, name) },
-            onAddVariant = { teeId, basketId, lengthMeters, parValue ->
+            onAddVariantClick = {
+                holeForVariants = null
+                holeForNewVariant = hole
+            }
+        )
+    }
+
+    holeForNewVariant?.let { hole ->
+        AddHoleVariantDialog(
+            tees = teesByHole[hole.id] ?: emptyList(),
+            baskets = basketsByHole[hole.id] ?: emptyList(),
+            existingCombinations = (variantsByHole[hole.id] ?: emptyList())
+                .map { it.teeId to it.basketId }
+                .toSet(),
+            onDismiss = { holeForNewVariant = null },
+            onConfirm = { teeId, basketId, lengthMeters, parValue ->
                 onAddHoleVariant(hole.id, teeId, basketId, lengthMeters, parValue)
+                holeForNewVariant = null
             }
         )
     }
@@ -1949,11 +1967,10 @@ fun HoleVariantsDialog(
     onDismiss: () -> Unit,
     onAddTee: (String) -> Unit,
     onAddBasket: (String) -> Unit,
-    onAddVariant: (Long, Long, Int, Int) -> Unit
+    onAddVariantClick: () -> Unit
 ) {
     var showAddTeeDialog by remember { mutableStateOf(false) }
     var showAddBasketDialog by remember { mutableStateOf(false) }
-    var showAddVariantDialog by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2004,7 +2021,7 @@ fun HoleVariantsDialog(
                 }
 
                 Button(
-                    onClick = { showAddVariantDialog = true },
+                    onClick = onAddVariantClick,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = tees.isNotEmpty() && baskets.isNotEmpty()
                 ) {
@@ -2043,18 +2060,9 @@ fun HoleVariantsDialog(
         )
     }
 
-    if (showAddVariantDialog) {
-        AddHoleVariantDialog(
-            tees = tees,
-            baskets = baskets,
-            existingCombinations = variants.map { it.teeId to it.basketId }.toSet(),
-            onDismiss = { showAddVariantDialog = false },
-            onConfirm = { teeId, basketId, lengthMeters, parValue ->
-                onAddVariant(teeId, basketId, lengthMeters, parValue)
-                showAddVariantDialog = false
-            }
-        )
-    }
+
+
+
 }
 
 @Composable

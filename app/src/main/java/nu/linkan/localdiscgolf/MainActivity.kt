@@ -248,10 +248,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    observeRoundHoleStats = { playSessionId, holeId ->
+                    observeRoundHoleStats = { playSessionId, holeId, holeVariantId ->
                         lifecycleScope.launch {
-                            playSessionDao.observeHoleStatsForPlayersInSessionOnHole(playSessionId, holeId).collectLatest { rows ->
-                                roundHoleStatsByKey["$playSessionId-$holeId"] = rows
+                            playSessionDao.observeHoleStatsForPlayersInSessionOnHole(
+                                playSessionId,
+                                holeId,
+                                holeVariantId
+                            ).collectLatest { rows ->
+                                roundHoleStatsByKey["$playSessionId-$holeId-$holeVariantId"] = rows
                             }
                         }
                     },
@@ -541,7 +545,7 @@ fun AppNavHost(
     playerHoleDetailRowsByKey: Map<String, List<PlayerHoleDetailRoundRow>>,
     observePlayerHoleDetail: (Long, Long, Int, Long?) -> Unit,
     roundHoleStatsByKey: Map<String, List<RoundHolePlayerStatsRow>>,
-    observeRoundHoleStats: (Long, Long) -> Unit,
+    observeRoundHoleStats: (Long, Long, Long?) -> Unit,
     onDeleteRound: (Long) -> Unit,
     teesByHole: Map<Long, List<HoleTeeEntity>>,
     basketsByHole: Map<Long, List<HoleBasketEntity>>,
@@ -782,15 +786,16 @@ fun AppNavHost(
             val rows = roundHoleRowsByKey["$playSessionId-$sequenceNumber"] ?: emptyList()
             val holeCount = holeCountBySession[playSessionId] ?: 0
             val holeId = rows.firstOrNull()?.holeId
+            val holeVariantId = rows.firstOrNull()?.holeVariantId
 
-            LaunchedEffect(playSessionId, holeId) {
+            LaunchedEffect(playSessionId, holeId, holeVariantId) {
                 if (holeId != null) {
-                    observeRoundHoleStats(playSessionId, holeId)
+                    observeRoundHoleStats(playSessionId, holeId, holeVariantId)
                 }
             }
 
             val statsRows = if (holeId != null) {
-                roundHoleStatsByKey["$playSessionId-$holeId"] ?: emptyList()
+                roundHoleStatsByKey["$playSessionId-$holeId-$holeVariantId"] ?: emptyList()
             } else {
                 emptyList()
             }

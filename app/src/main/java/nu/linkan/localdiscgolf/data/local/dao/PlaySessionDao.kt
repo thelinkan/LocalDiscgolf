@@ -318,14 +318,18 @@ interface PlaySessionDao {
     INNER JOIN session_player_hole hist_sph
         ON hist_sph.session_player_id = hist_sp.id
     WHERE current_sp.play_session_id = :playSessionId
-      AND hist_sph.hole_id = :holeId
       AND hist_ps.status = 'completed'
       AND hist_sph.throws_count IS NOT NULL
+      AND (
+            (:holeVariantId IS NOT NULL AND hist_sph.hole_variant_id = :holeVariantId)
+         OR (:holeVariantId IS NULL AND hist_sph.hole_id = :holeId AND hist_sph.hole_variant_id IS NULL)
+      )
     GROUP BY hist_sp.player_id, hist_sph.hole_id
 """)
     fun observeHoleStatsForPlayersInSessionOnHole(
         playSessionId: Long,
-        holeId: Long
+        holeId: Long,
+        holeVariantId: Long?
     ): Flow<List<RoundHolePlayerStatsRow>>
 
     @Query("""

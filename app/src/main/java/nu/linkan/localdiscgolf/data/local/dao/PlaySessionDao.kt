@@ -46,7 +46,24 @@ interface PlaySessionDao {
         sph.basket_name_snapshot AS basketNameSnapshot,
         sph.length_snapshot_meters AS lengthSnapshotMeters,
         sph.par_snapshot AS parSnapshot,
-        sph.throws_count AS throwsCount
+        sph.throws_count AS throwsCount,
+
+        COALESCE((
+            SELECT SUM(prev.throws_count)
+            FROM session_player_hole prev
+            WHERE prev.session_player_id = sph.session_player_id
+              AND prev.sequence_number < sph.sequence_number
+              AND prev.throws_count IS NOT NULL
+        ), 0) AS previousThrowsTotal,
+
+        COALESCE((
+            SELECT SUM(prev.throws_count - prev.par_snapshot)
+            FROM session_player_hole prev
+            WHERE prev.session_player_id = sph.session_player_id
+              AND prev.sequence_number < sph.sequence_number
+              AND prev.throws_count IS NOT NULL
+        ), 0) AS previousRelativeToPar
+
     FROM session_player_hole sph
     INNER JOIN session_player sp ON sp.id = sph.session_player_id
     WHERE sp.play_session_id = :playSessionId
@@ -160,12 +177,12 @@ interface PlaySessionDao {
         sph.hole_number_snapshot AS holeNumber,
         COUNT(*) AS timesPlayed,
         MIN(sph.throws_count) AS bestThrows,
-        AVG(sph.throws_count * 1.0) AS avgThrows,
-        SUM(CASE WHEN sph.throws_count <= sph.par_snapshot - 1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
-        SUM(CASE WHEN sph.throws_count = sph.par_snapshot THEN 1 ELSE 0 END) AS pars,
-        SUM(CASE WHEN sph.throws_count = sph.par_snapshot + 1 THEN 1 ELSE 0 END) AS bogeys,
-        SUM(CASE WHEN sph.throws_count = sph.par_snapshot + 2 THEN 1 ELSE 0 END) AS doubleBogeys,
-        SUM(CASE WHEN sph.throws_count >= sph.par_snapshot + 3 THEN 1 ELSE 0 END) AS tripleBogeysOrWorse
+        AVG(CAST(sph.throws_count AS REAL)) AS avgThrows,
+        SUM(CASE WHEN sph.throws_count - sph.par_snapshot <= -1 THEN 1 ELSE 0 END) AS birdiesOrBetter,
+        SUM(CASE WHEN sph.throws_count - sph.par_snapshot = 0 THEN 1 ELSE 0 END) AS pars,
+        SUM(CASE WHEN sph.throws_count - sph.par_snapshot = 1 THEN 1 ELSE 0 END) AS bogeys,
+        SUM(CASE WHEN sph.throws_count - sph.par_snapshot = 2 THEN 1 ELSE 0 END) AS doubleBogeys,
+        SUM(CASE WHEN sph.throws_count - sph.par_snapshot >= 3 THEN 1 ELSE 0 END) AS tripleBogeysOrWorse
     FROM session_player_hole sph
     INNER JOIN session_player sp ON sp.id = sph.session_player_id
     INNER JOIN play_session ps ON ps.id = sp.play_session_id

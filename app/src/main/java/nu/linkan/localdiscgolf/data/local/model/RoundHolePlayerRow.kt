@@ -14,5 +14,8 @@ data class RoundHolePlayerRow(
     val basketNameSnapshot: String?,
     val lengthSnapshotMeters: Int,
     val parSnapshot: Int,
-    val throwsCount: Int?
+    val throwsCount: Int?,
+
+    val previousThrowsTotal: Int,
+    val previousRelativeToPar: Int
 )

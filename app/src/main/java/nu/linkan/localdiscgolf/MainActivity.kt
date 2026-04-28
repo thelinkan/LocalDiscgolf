@@ -3135,22 +3135,26 @@ fun RoundPlayerThrowsRow(
     onValueChange: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = row.playerName ?: "Spelare ${row.playerId}",
-            style = MaterialTheme.typography.titleMedium
-        )
+        val playerText = row.playerName ?: "Spelare ${row.playerId}"
 
+        if (row.sequenceNumber > 1) {
+            Text(
+                text = "$playerText, ${row.previousThrowsTotal} (${formatRelativeScore(row.previousRelativeToPar)})",
+                style = MaterialTheme.typography.titleMedium
+            )
+        } else {
+            Text(
+                text = playerText,
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
         if (stats != null) {
             Text(
                 text = "Tidigare: ${stats.timesPlayed} rundor, PB ${stats.bestThrows}, snitt ${"%.2f".format(stats.avgThrows)}",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
-                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars}",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                text = "Bogey: ${stats.bogeys}  Dubbel: ${stats.doubleBogeys}  Trippel+: ${stats.tripleBogeysOrWorse}",
+                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars} Bogey: ${stats.bogeys}  Dubbel: ${stats.doubleBogeys}  Trippel+: ${stats.tripleBogeysOrWorse}",
                 style = MaterialTheme.typography.bodySmall
             )
         } else {

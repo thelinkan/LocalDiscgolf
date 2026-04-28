@@ -369,10 +369,15 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    observePlayerHoleDetail = { playerId, courseId, holeNumber ->
+                    observePlayerHoleDetail = { playerId, courseId, holeNumber, holeVariantId ->
                         lifecycleScope.launch {
-                            playSessionDao.observeHoleDetailForPlayer(playerId, courseId, holeNumber).collectLatest { rows ->
-                                playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber"] = rows
+                            playSessionDao.observeHoleDetailForPlayer(
+                                playerId,
+                                courseId,
+                                holeNumber,
+                                holeVariantId
+                            ).collectLatest { rows ->
+                                playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber-$holeVariantId"] = rows
                             }
                         }
                     },
@@ -534,7 +539,7 @@ fun AppNavHost(
     observePlayerLayoutStats: (Long) -> Unit,
     observePlayerHoleStats: (Long) -> Unit,
     playerHoleDetailRowsByKey: Map<String, List<PlayerHoleDetailRoundRow>>,
-    observePlayerHoleDetail: (Long, Long, Int) -> Unit,
+    observePlayerHoleDetail: (Long, Long, Int, Long?) -> Unit,
     roundHoleStatsByKey: Map<String, List<RoundHolePlayerStatsRow>>,
     observeRoundHoleStats: (Long, Long) -> Unit,
     onDeleteRound: (Long) -> Unit,
@@ -859,7 +864,7 @@ fun AppNavHost(
         }
 
         composable(
-            route = "player_hole_stats/{playerId}/{courseId}/{holeNumber}",
+            route = "player_hole_stats/{playerId}/{courseId}/{holeNumber}/{holeVariantId}",
             arguments = listOf(
                 navArgument("playerId") { type = NavType.LongType },
                 navArgument("courseId") { type = NavType.LongType },
@@ -869,12 +874,14 @@ fun AppNavHost(
             val playerId = backStackEntry.arguments?.getLong("playerId") ?: return@composable
             val courseId = backStackEntry.arguments?.getLong("courseId") ?: return@composable
             val holeNumber = backStackEntry.arguments?.getInt("holeNumber") ?: return@composable
+            val holeVariantIdRaw = backStackEntry.arguments?.getLong("holeVariantId") ?: 0L
+            val holeVariantId = if (holeVariantIdRaw == 0L) null else holeVariantIdRaw
 
             LaunchedEffect(playerId, courseId, holeNumber) {
-                observePlayerHoleDetail(playerId, courseId, holeNumber)
+                observePlayerHoleDetail(playerId, courseId, holeNumber, holeVariantId)
             }
 
-            val rows = playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber"] ?: emptyList()
+            val rows = playerHoleDetailRowsByKey["$playerId-$courseId-$holeNumber-$holeVariantId"] ?: emptyList()
 
             PlayerHoleDetailScreen(
                 rows = rows,
@@ -904,8 +911,9 @@ fun AppNavHost(
                     layoutStats = layoutStats,
                     holeStats = holeStats,
                     onBack = { navController.popBackStack() },
-                    onHoleClick = { courseId, holeNumber ->
-                        navController.navigate("player_hole_stats/$playerId/$courseId/$holeNumber")
+                    onHoleClick = { courseId, holeNumber, holeVariantId ->
+                        val variantPart = holeVariantId ?: 0L
+                        navController.navigate("player_hole_stats/$playerId/$courseId/$holeNumber/$variantPart")
                     }
                 )
             }
@@ -920,7 +928,7 @@ fun PlayerStatsScreen(
     layoutStats: List<PlayerLayoutStatsRow>,
     holeStats: List<PlayerHoleStatsRow>,
     onBack: () -> Unit,
-    onHoleClick: (Long, Int) -> Unit
+    onHoleClick: (Long, Int, Long?) -> Unit
 ) {
     var selectedCourseId by remember(player.id) { mutableStateOf<Long?>(null) }
 
@@ -1038,13 +1046,30 @@ fun PlayerStatsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onHoleClick(row.courseId, row.holeNumber) }
+                            .clickable { onHoleClick(row.courseId, row.holeNumber, row.holeVariantId) }
                             .padding(vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = "${row.courseName} - Hål ${row.holeNumber}",
                             style = MaterialTheme.typography.titleMedium
+                        )
+
+                        val variantText = buildList {
+                            if (!row.teeName.isNullOrBlank()) add("Utkast: ${row.teeName}")
+                            if (!row.basketName.isNullOrBlank()) add("Korg: ${row.basketName}")
+                        }.joinToString(" | ")
+
+                        if (variantText.isNotBlank()) {
+                            Text(
+                                text = variantText,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        Text(
+                            text = "Längd: ${row.lengthMeters} m, Par: ${row.parValue}",
+                            style = MaterialTheme.typography.bodyMedium
                         )
                         Text("Spelat: ${row.timesPlayed} gånger")
                         Text("Bästa kast: ${row.bestThrows}")

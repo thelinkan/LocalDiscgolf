@@ -175,6 +175,11 @@ interface PlaySessionDao {
         c.id AS courseId,
         c.name AS courseName,
         sph.hole_number_snapshot AS holeNumber,
+        sph.hole_variant_id AS holeVariantId,
+        sph.tee_name_snapshot AS teeName,
+        sph.basket_name_snapshot AS basketName,
+        sph.length_snapshot_meters AS lengthMeters,
+        sph.par_snapshot AS parValue,
         COUNT(*) AS timesPlayed,
         MIN(sph.throws_count) AS bestThrows,
         AVG(CAST(sph.throws_count AS REAL)) AS avgThrows,
@@ -190,8 +195,22 @@ interface PlaySessionDao {
     WHERE sp.player_id = :playerId
       AND ps.status = 'completed'
       AND sph.throws_count IS NOT NULL
-    GROUP BY c.id, c.name, sph.hole_number_snapshot
-    ORDER BY c.name, sph.hole_number_snapshot
+    GROUP BY
+        c.id,
+        c.name,
+        sph.hole_number_snapshot,
+        sph.hole_variant_id,
+        sph.tee_name_snapshot,
+        sph.basket_name_snapshot,
+        sph.length_snapshot_meters,
+        sph.par_snapshot
+    ORDER BY
+        c.name,
+        sph.hole_number_snapshot,
+        sph.length_snapshot_meters,
+        sph.par_snapshot,
+        sph.tee_name_snapshot,
+        sph.basket_name_snapshot
 """)
     fun observeHoleStatsForPlayer(
         playerId: Long
@@ -215,6 +234,10 @@ interface PlaySessionDao {
     WHERE sp.player_id = :playerId
       AND c.id = :courseId
       AND sph.hole_number_snapshot = :holeNumber
+      AND (
+            (:holeVariantId IS NOT NULL AND sph.hole_variant_id = :holeVariantId)
+         OR (:holeVariantId IS NULL AND sph.hole_variant_id IS NULL)
+      )
       AND ps.status = 'completed'
       AND sph.throws_count IS NOT NULL
     ORDER BY ps.started_at DESC
@@ -222,7 +245,8 @@ interface PlaySessionDao {
     fun observeHoleDetailForPlayer(
         playerId: Long,
         courseId: Long,
-        holeNumber: Int
+        holeNumber: Int,
+        holeVariantId: Long?
     ): Flow<List<PlayerHoleDetailRoundRow>>
 
     @Query("""

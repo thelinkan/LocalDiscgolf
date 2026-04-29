@@ -744,7 +744,8 @@ fun AppNavHost(
                 title = "Runddetalj",
                 rows = rows,
                 onBack = { navController.popBackStack() },
-                onBackToStart = null
+                onBackToStart = null,
+                onBackToRound = null
             )
         }
 
@@ -816,6 +817,9 @@ fun AppNavHost(
                         navController.navigate("round/$playSessionId/${sequenceNumber + 1}")
                     }
                 },
+                onShowSummary = {
+                    navController.navigate("round_summary_live/$playSessionId/$sequenceNumber")
+                },
                 onSaveHoleResults = { values ->
                     values.forEach { (sessionPlayerHoleId, throwsCount) ->
                         onUpdateThrowsForHole(sessionPlayerHoleId, throwsCount)
@@ -825,6 +829,37 @@ fun AppNavHost(
                     onFinishRound(playSessionId)
                     navController.navigate("round_summary/$playSessionId") {
                         popUpTo("start")
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = "round_summary_live/{playSessionId}/{sequenceNumber}",
+            arguments = listOf(
+                navArgument("playSessionId") { type = NavType.LongType },
+                navArgument("sequenceNumber") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val playSessionId = backStackEntry.arguments?.getLong("playSessionId") ?: return@composable
+            val sequenceNumber = backStackEntry.arguments?.getInt("sequenceNumber") ?: return@composable
+
+            LaunchedEffect(playSessionId) {
+                observeRoundSummaryRows(playSessionId)
+            }
+
+            val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+
+            RoundSummaryScreen(
+                title = "Rundsummering",
+                rows = rows,
+                onBack = {
+                    navController.popBackStack()
+                },
+                onBackToStart = null,
+                onBackToRound = {
+                    navController.navigate("round/$playSessionId/$sequenceNumber") {
+                        launchSingleTop = true
                     }
                 }
             )
@@ -852,7 +887,8 @@ fun AppNavHost(
                     navController.navigate("start") {
                         popUpTo("start") { inclusive = true }
                     }
-                }
+                },
+                onBackToRound = null
             )
         }
 
@@ -2571,7 +2607,8 @@ fun RoundSummaryScreen(
     title: String,
     rows: List<RoundSummaryHoleRow>,
     onBack: (() -> Unit)?,
-    onBackToStart: (() -> Unit)?
+    onBackToStart: (() -> Unit)?,
+    onBackToRound: (() -> Unit)?
 ) {
     val grouped = rows
         .groupBy { it.playerId }
@@ -2603,15 +2640,29 @@ fun RoundSummaryScreen(
             )
         },
         bottomBar = {
-            if (onBackToStart != null) {
-                Button(
-                    onClick = onBackToStart,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(16.dp)
-                ) {
-                    Text("Till startsidan")
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (onBackToRound != null) {
+                    Button(
+                        onClick = onBackToRound,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Tillbaka till rundan")
+                    }
+                }
+
+                if (onBackToStart != null) {
+                    Button(
+                        onClick = onBackToStart,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Till startsidan")
+                    }
                 }
             }
         }
@@ -2949,6 +3000,7 @@ fun RoundHoleScreen(
     onBack: () -> Unit,
     onPreviousHole: () -> Unit,
     onNextHole: () -> Unit,
+    onShowSummary: () -> Unit,
     onSaveHoleResults: (List<Pair<Long, Int>>) -> Unit,
     onFinishRound: () -> Unit
 ) {
@@ -3022,7 +3074,15 @@ fun RoundHoleScreen(
                         Text("Nästa")
                     }
                 }
-
+                Button(
+                    onClick = {
+                        saveCurrentHole()
+                        onShowSummary()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Visa rundsummering")
+                }
                 Button(
                     onClick = { showFinishDialog = true },
                     modifier = Modifier.fillMaxWidth()

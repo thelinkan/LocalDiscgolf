@@ -18,6 +18,7 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
+import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 
 @Dao
 interface PlaySessionDao {
@@ -297,6 +298,27 @@ interface PlaySessionDao {
     fun observeSessionsForPlayer(
         playerId: Long
     ): Flow<List<PlayerSessionRow>>
+
+    @Query("""
+    SELECT
+        ps.id AS playSessionId,
+        c.name AS courseName,
+        (
+            SELECT l.name
+            FROM session_player sp
+            LEFT JOIN layout l ON l.id = sp.layout_id
+            WHERE sp.play_session_id = ps.id
+            ORDER BY sp.id
+            LIMIT 1
+        ) AS layoutName,
+        ps.started_at AS startedAt
+    FROM play_session ps
+    INNER JOIN course c ON c.id = ps.course_id
+    WHERE ps.id = :playSessionId
+""")
+    fun observeRoundSummaryHeader(
+        playSessionId: Long
+    ): Flow<RoundSummaryHeaderRow?>
 
     @Query("""
     SELECT

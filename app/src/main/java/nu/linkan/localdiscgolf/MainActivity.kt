@@ -86,6 +86,7 @@ import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleVariantEntity
 import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
+import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -125,6 +126,7 @@ class MainActivity : ComponentActivity() {
                 val teesByHole = remember { mutableStateMapOf<Long, List<HoleTeeEntity>>() }
                 val basketsByHole = remember { mutableStateMapOf<Long, List<HoleBasketEntity>>() }
                 val variantsByHole = remember { mutableStateMapOf<Long, List<HoleVariantWithNames>>() }
+                val roundSummaryHeaderBySession = remember { mutableStateMapOf<Long, RoundSummaryHeaderRow?>() }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -161,6 +163,7 @@ class MainActivity : ComponentActivity() {
                     teesByHole = teesByHole,
                     basketsByHole = basketsByHole,
                     variantsByHole = variantsByHole,
+                    roundSummaryHeaderBySession = roundSummaryHeaderBySession,
 
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
@@ -277,6 +280,13 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             layoutDao.observeLayoutHoles(layoutId).collectLatest { layoutHoles ->
                                 layoutHolesByLayout[layoutId] = layoutHoles
+                            }
+                        }
+                    },
+                    observeRoundSummaryHeader = { playSessionId ->
+                        lifecycleScope.launch {
+                            playSessionDao.observeRoundSummaryHeader(playSessionId).collectLatest { header ->
+                                roundSummaryHeaderBySession[playSessionId] = header
                             }
                         }
                     },
@@ -556,6 +566,8 @@ fun AppNavHost(
     variantsByHole: Map<Long, List<HoleVariantWithNames>>,
     observeHoleVariants: (Long) -> Unit,
     onAddHoleVariant: (Long, Long, Long, Int, Int) -> Unit,
+    roundSummaryHeaderBySession: Map<Long, RoundSummaryHeaderRow?>,
+    observeRoundSummaryHeader: (Long) -> Unit,
 ){
     NavHost(
         navController = navController,
@@ -736,12 +748,17 @@ fun AppNavHost(
 
             LaunchedEffect(playSessionId) {
                 observeRoundSummaryRows(playSessionId)
+                observeRoundSummaryHeader(playSessionId)
             }
 
             val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+            val header = roundSummaryHeaderBySession[playSessionId]
 
             RoundSummaryScreen(
                 title = "Runddetalj",
+                courseName = header?.courseName ?: "",
+                layoutName = header?.layoutName,
+                startedAt = header?.startedAt,
                 rows = rows,
                 onBack = { navController.popBackStack() },
                 onBackToStart = null,
@@ -846,12 +863,17 @@ fun AppNavHost(
 
             LaunchedEffect(playSessionId) {
                 observeRoundSummaryRows(playSessionId)
+                observeRoundSummaryHeader(playSessionId)
             }
 
             val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+            val header = roundSummaryHeaderBySession[playSessionId]
 
             RoundSummaryScreen(
                 title = "Rundsummering",
+                courseName = header?.courseName ?: "",
+                layoutName = header?.layoutName,
+                startedAt = header?.startedAt,
                 rows = rows,
                 onBack = {
                     navController.popBackStack()
@@ -875,12 +897,17 @@ fun AppNavHost(
 
             LaunchedEffect(playSessionId) {
                 observeRoundSummaryRows(playSessionId)
+                observeRoundSummaryHeader(playSessionId)
             }
 
             val rows = roundSummaryRowsBySession[playSessionId] ?: emptyList()
+            val header = roundSummaryHeaderBySession[playSessionId]
 
             RoundSummaryScreen(
                 title = "Rundsummering",
+                courseName = header?.courseName ?: "",
+                layoutName = header?.layoutName,
+                startedAt = header?.startedAt,
                 rows = rows,
                 onBack = null,
                 onBackToStart = {
@@ -2605,6 +2632,9 @@ fun NewRoundScreen(
 @Composable
 fun RoundSummaryScreen(
     title: String,
+    courseName: String,
+    layoutName: String?,
+    startedAt: Long?,
     rows: List<RoundSummaryHoleRow>,
     onBack: (() -> Unit)?,
     onBackToStart: (() -> Unit)?,
@@ -2675,6 +2705,29 @@ fun RoundSummaryScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = courseName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (!layoutName.isNullOrBlank()) {
+                        Text(
+                            text = layoutName,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+
+                    if (startedAt != null) {
+                        Text(
+                            text = "Start: ${formatDateTime(startedAt)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+            item {
                 RoundPlayerSummarySection(grouped = grouped)
             }
 
@@ -2703,8 +2756,10 @@ fun RoundPlayerSummarySection(
         grouped.forEach { playerRows ->
             val sorted = playerRows.sortedBy { it.sequenceNumber }
             val playerName = sorted.firstOrNull()?.playerName ?: "Spelare"
-            val totalThrows = sorted.sumOf { it.throwsCount ?: 0 }
-            val totalPar = sorted.sumOf { it.parSnapshot }
+            val playedRows = sorted.filter { it.throwsCount != null }
+
+            val totalThrows = playedRows.sumOf { it.throwsCount ?: 0 }
+            val totalPar = playedRows.sumOf { it.parSnapshot }
             val relative = totalThrows - totalPar
 
             Row(
@@ -3229,7 +3284,7 @@ fun RoundPlayerThrowsRow(
 
         if (row.sequenceNumber > 1) {
             Text(
-                text = "$playerText, ${row.previousThrowsTotal} (${formatRelativeScore(row.previousRelativeToPar)})",
+                text = "$playerText, ${formatRelativeScore(row.previousRelativeToPar)} (${row.previousThrowsTotal})",
                 style = MaterialTheme.typography.titleMedium
             )
         } else {

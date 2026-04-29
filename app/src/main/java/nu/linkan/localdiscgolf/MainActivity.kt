@@ -3371,57 +3371,82 @@ fun PlayerDetailScreen(
                 )
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(sessions) { session ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
+                Text(
+                    text = "${sessions.size} inlagda rundor",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(sessions) { session ->
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .clickable { onSessionClick(session.playSessionId) }
-                                .padding(vertical = 4.dp)
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = session.courseName +
-                                        (session.layoutName?.let { " - $it" } ?: ""),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "Start: ${formatDateTime(session.startedAt)}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            if (session.endedAt != null) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSessionClick(session.playSessionId) }
+                                    .padding(vertical = 4.dp)
+                            ) {
                                 Text(
-                                    text = "Slut: ${formatDateTime(session.endedAt)}",
+                                    text = session.courseName + (session.layoutName?.let { " - $it" }
+                                        ?: ""),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+
+                                Text(
+                                    text = if (session.playerCount <= 1) {
+                                        "Själv"
+                                    } else {
+                                        "Tillsammans med ${session.playerCount - 1} andra spelare"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                Text(
+                                    text = "Start: ${formatDateTime(session.startedAt)}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                val resultText =
+                                    if (session.totalThrows != null && session.totalRelativeToPar != null) {
+                                        "Resultat: ${formatRelativeScore(session.totalRelativeToPar)} (${session.totalThrows})"
+                                    } else {
+                                        "Resultat: -"
+                                    }
+
+                                Text(
+                                    text = if (session.status == "completed") {
+                                        resultText
+                                    } else {
+                                        "$resultText - Pågående"
+                                    },
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
-                            Text(
-                                text = "Status: ${formatSessionStatus(session.status)}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+
+                            IconButton(onClick = { sessionToDelete = session.playSessionId }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Ta bort runda"
+                                )
+                            }
                         }
 
-                        IconButton(onClick = { sessionToDelete = session.playSessionId }) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete,
-                                contentDescription = "Ta bort runda"
-                            )
-                        }
+                        HorizontalDivider()
                     }
-
-                    HorizontalDivider()
                 }
             }
         }

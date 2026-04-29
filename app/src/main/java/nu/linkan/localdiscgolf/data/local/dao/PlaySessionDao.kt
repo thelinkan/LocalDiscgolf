@@ -281,17 +281,40 @@ interface PlaySessionDao {
     @Query("""
     SELECT
         ps.id AS playSessionId,
-        sp.player_id AS playerId,
-        sp.display_name AS playerName,
         c.name AS courseName,
         l.name AS layoutName,
         ps.started_at AS startedAt,
         ps.ended_at AS endedAt,
-        ps.status AS status
-    FROM session_player sp
-    INNER JOIN play_session ps ON ps.id = sp.play_session_id
+        ps.status AS status,
+
+        (
+            SELECT COUNT(*)
+            FROM session_player sp_count
+            WHERE sp_count.play_session_id = ps.id
+        ) AS playerCount,
+
+        (
+            SELECT SUM(sph.throws_count)
+            FROM session_player sp_me
+            INNER JOIN session_player_hole sph ON sph.session_player_id = sp_me.id
+            WHERE sp_me.play_session_id = ps.id
+              AND sp_me.player_id = :playerId
+              AND sph.throws_count IS NOT NULL
+        ) AS totalThrows,
+
+        (
+            SELECT SUM(sph.throws_count - sph.par_snapshot)
+            FROM session_player sp_me
+            INNER JOIN session_player_hole sph ON sph.session_player_id = sp_me.id
+            WHERE sp_me.play_session_id = ps.id
+              AND sp_me.player_id = :playerId
+              AND sph.throws_count IS NOT NULL
+        ) AS totalRelativeToPar
+
+    FROM play_session ps
+    INNER JOIN session_player sp ON sp.play_session_id = ps.id
     INNER JOIN course c ON c.id = ps.course_id
-    INNER JOIN layout l ON l.id = sp.layout_id
+    LEFT JOIN layout l ON l.id = sp.layout_id
     WHERE sp.player_id = :playerId
     ORDER BY ps.started_at DESC
 """)

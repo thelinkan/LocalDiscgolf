@@ -87,6 +87,8 @@ import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleVariantEntity
 import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
+import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
+import nu.linkan.localdiscgolf.data.local.model.CourseListRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -127,6 +129,8 @@ class MainActivity : ComponentActivity() {
                 val basketsByHole = remember { mutableStateMapOf<Long, List<HoleBasketEntity>>() }
                 val variantsByHole = remember { mutableStateMapOf<Long, List<HoleVariantWithNames>>() }
                 val roundSummaryHeaderBySession = remember { mutableStateMapOf<Long, RoundSummaryHeaderRow?>() }
+                var playerListRows by remember { mutableStateOf<List<PlayerListRow>>(emptyList()) }
+                var courseListRows by remember { mutableStateOf<List<CourseListRow>>(emptyList()) }
 
                 LaunchedEffect(Unit) {
                     launch {
@@ -141,6 +145,12 @@ class MainActivity : ComponentActivity() {
                         playSessionDao.observeInProgressSessions().collectLatest {
                             inProgressSessions.value = it
                         }
+                    }
+                    launch {
+                        playerDao.observePlayerListRows().collectLatest { playerListRows = it }
+                    }
+                    launch {
+                        courseDao.observeCourseListRows().collectLatest { courseListRows = it }
                     }
                 }
 
@@ -164,6 +174,8 @@ class MainActivity : ComponentActivity() {
                     basketsByHole = basketsByHole,
                     variantsByHole = variantsByHole,
                     roundSummaryHeaderBySession = roundSummaryHeaderBySession,
+                    playerListRows = playerListRows,
+                    courseListRows = courseListRows,
 
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
@@ -568,6 +580,8 @@ fun AppNavHost(
     onAddHoleVariant: (Long, Long, Long, Int, Int) -> Unit,
     roundSummaryHeaderBySession: Map<Long, RoundSummaryHeaderRow?>,
     observeRoundSummaryHeader: (Long) -> Unit,
+    playerListRows: List<PlayerListRow>,
+    courseListRows: List<CourseListRow>,
 ){
     NavHost(
         navController = navController,
@@ -584,7 +598,7 @@ fun AppNavHost(
 
         composable("players") {
             PlayersScreen(
-                players = players,
+                playerRows = playerListRows,
                 onBack = { navController.popBackStack() },
                 onAddPlayer = onAddPlayer,
                 onPlayerClick = { playerId ->
@@ -595,7 +609,7 @@ fun AppNavHost(
 
         composable("courses") {
             CoursesScreen(
-                courses = courses,
+                courseRows = courseListRows,
                 onBack = { navController.popBackStack() },
                 onAddCourse = onAddCourse,
                 onCourseClick = { courseId ->
@@ -1296,7 +1310,7 @@ fun PlayerHoleDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayersScreen(
-    players: List<PlayerEntity>,
+    playerRows: List<PlayerListRow>,
     onBack: () -> Unit,
     onAddPlayer: (String) -> Unit,
     onPlayerClick: (Long) -> Unit
@@ -1306,49 +1320,65 @@ fun PlayersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Spelare") }
+                title = { Text("Spelare") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
             )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onBack,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Tillbaka")
-            }
-
-            Text(
-                text = "Antal spelare: ${players.size}",
-                style = MaterialTheme.typography.bodyLarge
-            )
-
+        },
+        bottomBar = {
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
             ) {
                 Text("Ny spelare")
             }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Text(
+                    text = "Antal spelare: ${playerRows.size}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(players) { player ->
+            items(playerRows) { player ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlayerClick(player.playerId) }
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        text = player.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPlayerClick(player.id) }
-                            .padding(vertical = 6.dp)
+                        text = player.playerName,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "${player.roundCount} rundor",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
+                HorizontalDivider()
+            }
+
+            item {
+                Spacer(modifier = Modifier.navigationBarsPadding())
             }
         }
     }
@@ -1400,7 +1430,7 @@ fun PlayerListContent(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoursesScreen(
-    courses: List<CourseEntity>,
+    courseRows: List<CourseListRow>,
     onBack: () -> Unit,
     onAddCourse: (String) -> Unit,
     onCourseClick: (Long) -> Unit
@@ -1410,46 +1440,64 @@ fun CoursesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Banor") }
+                title = { Text("Banor") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tillbaka"
+                        )
+                    }
+                }
             )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onBack,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Tillbaka")
-            }
-
-            Text(
-                text = "Antal banor: ${courses.size}",
-                style = MaterialTheme.typography.bodyLarge
-            )
-
+        },
+        bottomBar = {
             Button(
                 onClick = { showDialog = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp)
             ) {
                 Text("Ny bana")
             }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Text(
+                    text = "Antal banor: ${courseRows.size}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(courses) { course ->
+            items(courseRows) { course ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCourseClick(course.courseId) }
+                        .padding(vertical = 6.dp)
+                ) {
                     Text(
-                        text = course.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.clickable { onCourseClick(course.id) }
+                        text = course.courseName,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "${course.holeCount} hål, ${course.layoutCount} layouter",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
+                HorizontalDivider()
+            }
+
+            item {
+                Spacer(modifier = Modifier.navigationBarsPadding())
             }
         }
     }

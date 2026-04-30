@@ -44,7 +44,7 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerSessionRow
 import nu.linkan.localdiscgolf.formatDateTime
 import nu.linkan.localdiscgolf.formatRelativeDouble
-import nu.linkan.localdiscgolf.formatRelativeScore
+import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.dialogs.NameInputDialog
 
 @OptIn(ExperimentalMaterial3Api::class)

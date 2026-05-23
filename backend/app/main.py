@@ -677,6 +677,80 @@ def get_current_round_state(round_id: int) -> dict:
             ],
         },
     }
+
+@app.get("/users/{username}/players")
+def get_user_players(username: str) -> dict:
+    user = fetch_one(
+        """
+        SELECT id, username, role, is_active
+        FROM user_account
+        WHERE username = :username
+        """,
+        {"username": username},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    own_player = fetch_one(
+        """
+        SELECT
+            p.id,
+            p.name,
+            p.owner_user_id,
+            p.created_by_user_id,
+            p.is_guest,
+            p.is_active
+        FROM player p
+        WHERE p.owner_user_id = :user_id
+          AND p.is_active = 1
+        """,
+        {"user_id": user["id"]},
+    )
+
+    guest_players = fetch_all(
+        """
+        SELECT
+            p.id,
+            p.name,
+            p.owner_user_id,
+            p.created_by_user_id,
+            p.is_guest,
+            p.is_active
+        FROM player p
+        WHERE p.created_by_user_id = :user_id
+          AND p.is_guest = 1
+          AND p.is_active = 1
+        ORDER BY p.name
+        """,
+        {"user_id": user["id"]},
+    )
+
+    scoreable_players = fetch_all(
+        """
+        SELECT
+            p.id,
+            p.name,
+            p.owner_user_id,
+            p.created_by_user_id,
+            p.is_guest,
+            p.is_active,
+            upp.permission_level
+        FROM user_player_permission upp
+        INNER JOIN player p ON p.id = upp.target_player_id
+        WHERE upp.source_user_id = :user_id
+          AND p.is_active = 1
+          AND upp.permission_level <> 'none'
+        ORDER BY p.name
+        """,
+        {"user_id": user["id"]},
+    )
+
+    return {
+        "user": user,
+        "own_player": own_player,
+        "guest_players": guest_players,
+        "scoreable_players": scoreable_players,
+    }
     
     
 # =========================

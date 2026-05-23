@@ -367,6 +367,60 @@ def get_course_holes(course_id: int) -> list[dict]:
     """
     return fetch_all(sql, {"course_id": course_id})
 
+@app.get("/layouts/{layout_id}")
+def get_layout_endpoint(layout_id: int) -> dict:
+    layout = fetch_one(
+        """
+        SELECT
+            l.id,
+            l.course_id,
+            c.name AS course_name,
+            l.name,
+            l.description,
+            l.is_active
+        FROM layout l
+        INNER JOIN course c ON c.id = l.course_id
+        WHERE l.id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    return layout
+    
+@app.get("/layouts/{layout_id}/holes")
+def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
+    layout = fetch_one(
+        """
+        SELECT id
+        FROM layout
+        WHERE id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+
+    sql = """
+        SELECT
+            lh.sequence_number,
+            h.id AS hole_id,
+            h.hole_number,
+            h.name AS hole_name,
+            hv.id AS hole_variant_id,
+            ht.name AS tee_name,
+            hb.name AS basket_name,
+            hv.length_meters,
+            hv.par_value
+        FROM layout_hole lh
+        INNER JOIN hole h ON h.id = lh.hole_id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
+        WHERE lh.layout_id = :layout_id
+        ORDER BY lh.sequence_number
+    """
+    return fetch_all(sql, {"layout_id": layout_id})    
 
 @app.get("/players")
 def get_players() -> list[dict]:

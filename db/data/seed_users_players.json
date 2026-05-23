@@ -41,5 +41,42 @@
       "created_by_username": "Linkan",
       "is_guest": true
     }
+  ],
+  "permissions": [
+    {
+      "source_username": "Wilhelm",
+      "target_player_name": "Anna",
+      "permission_level": "propose"
+    },
+    {
+      "source_username": "Wilhelm",
+      "target_player_name": "Linkan",
+      "permission_level": "propose"
+    },
+    {
+      "source_username": "Anna",
+      "target_player_name": "Wilhelm",
+      "permission_level": "none"
+    },
+    {
+      "source_username": "Anna",
+      "target_player_name": "Linkan",
+      "permission_level": "none"
+    },
+    {
+      "source_username": "Linkan",
+      "target_player_name": "Anna",
+      "permission_level": "auto_approve"
+    },
+    {
+      "source_username": "Linkan",
+      "target_player_name": "Wilhelm",
+      "permission_level": "auto_approve"
+    },
+    {
+      "source_username": "Linkan",
+      "target_player_name": "Ludvig",
+      "permission_level": "auto_approve"
+    }
   ]
 }

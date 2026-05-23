@@ -1,7 +1,7 @@
-python3 import_course_seed.py lundby.json \
+python3 import_course_seed.py data/gansta.json \
   --host 127.0.0.1 \
   --port 3306 \
   --user ditt_anvandarnamn \
-  --password ditt_losenord \
+  --password ditt_losenord  \
   --database discgolf \
   --created-by-user-id 1

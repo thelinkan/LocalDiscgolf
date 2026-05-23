@@ -23,3 +23,15 @@ engine: Engine = create_engine(
     pool_pre_ping=True,
     future=True,
 )
+
+def fetch_all(sql: str, params: dict | None = None) -> list[dict]:
+    with engine.connect() as conn:
+        result = conn.execute(text(sql), params or {})
+        return [dict(row._mapping) for row in result]
+
+
+def fetch_one(sql: str, params: dict | None = None) -> dict | None:
+    with engine.connect() as conn:
+        result = conn.execute(text(sql), params or {})
+        row = result.first()
+        return dict(row._mapping) if row else None

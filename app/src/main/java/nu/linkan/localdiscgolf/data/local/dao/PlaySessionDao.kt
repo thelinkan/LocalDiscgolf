@@ -152,8 +152,10 @@ interface PlaySessionDao {
             sp.player_id AS playerId,
             sp.layout_id AS layoutId,
             sp.play_session_id AS playSessionId,
-            SUM(COALESCE(sph.throws_count, 0)) AS totalThrows,
-            SUM(sph.par_snapshot) AS totalPar
+            SUM(CASE WHEN sph.throws_count IS NOT NULL THEN sph.throws_count ELSE 0 END) AS totalThrows,
+            SUM(sph.par_snapshot) AS totalPar,
+            COUNT(*) AS holeCount,
+            COUNT(sph.throws_count) AS completedHoleCount
         FROM session_player sp
         INNER JOIN session_player_hole sph ON sph.session_player_id = sp.id
         GROUP BY sp.id, sp.player_id, sp.layout_id, sp.play_session_id
@@ -164,6 +166,7 @@ interface PlaySessionDao {
     INNER JOIN layout l ON l.id = sp.layout_id
     WHERE sp.player_id = :playerId
       AND ps.status = 'completed'
+      AND player_round.completedHoleCount = player_round.holeCount
     GROUP BY c.id, c.name, l.name
     ORDER BY c.name, l.name
 """)
@@ -309,7 +312,24 @@ interface PlaySessionDao {
             WHERE sp_me.play_session_id = ps.id
               AND sp_me.player_id = :playerId
               AND sph.throws_count IS NOT NULL
-        ) AS totalRelativeToPar
+        ) AS totalRelativeToPar,
+
+        (
+            SELECT COUNT(*)
+            FROM session_player sp_me
+            INNER JOIN session_player_hole sph ON sph.session_player_id = sp_me.id
+            WHERE sp_me.play_session_id = ps.id
+              AND sp_me.player_id = :playerId
+              AND sph.throws_count IS NOT NULL
+        ) AS playedHoleCount,
+
+        (
+            SELECT COUNT(*)
+            FROM session_player sp_me
+            INNER JOIN session_player_hole sph ON sph.session_player_id = sp_me.id
+            WHERE sp_me.play_session_id = ps.id
+              AND sp_me.player_id = :playerId
+        ) AS totalHoleCount
 
     FROM play_session ps
     INNER JOIN session_player sp ON sp.play_session_id = ps.id

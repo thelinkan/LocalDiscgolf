@@ -970,7 +970,8 @@ fun AppNavHost(
             arguments = listOf(
                 navArgument("playerId") { type = NavType.LongType },
                 navArgument("courseId") { type = NavType.LongType },
-                navArgument("holeNumber") { type = NavType.IntType }
+                navArgument("holeNumber") { type = NavType.IntType },
+                navArgument("holeVariantId") { type = NavType.LongType }
             )
         ) { backStackEntry ->
             val playerId = backStackEntry.arguments?.getLong("playerId") ?: return@composable
@@ -979,7 +980,7 @@ fun AppNavHost(
             val holeVariantIdRaw = backStackEntry.arguments?.getLong("holeVariantId") ?: 0L
             val holeVariantId = if (holeVariantIdRaw == 0L) null else holeVariantIdRaw
 
-            LaunchedEffect(playerId, courseId, holeNumber) {
+            LaunchedEffect(playerId, courseId, holeNumber, holeVariantId) {
                 observePlayerHoleDetail(playerId, courseId, holeNumber, holeVariantId)
             }
 

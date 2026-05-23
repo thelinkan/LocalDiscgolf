@@ -244,12 +244,23 @@ fun PlayerDetailScreen(
                                         "Resultat: -"
                                     }
 
+                                val extraInfo = buildList {
+                                    if (session.playedHoleCount < session.totalHoleCount) {
+                                        add("${session.playedHoleCount} av ${session.totalHoleCount} hål spelade")
+                                    }
+                                    if (session.status != "completed") {
+                                        add("Pågående")
+                                    }
+                                }.joinToString(" - ")
+
+                                val resultLine = if (extraInfo.isNotBlank()) {
+                                    "$resultText ($extraInfo)"
+                                } else {
+                                    resultText
+                                }
+
                                 Text(
-                                    text = if (session.status == "completed") {
-                                        resultText
-                                    } else {
-                                        "$resultText - Pågående"
-                                    },
+                                    text = resultLine,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }

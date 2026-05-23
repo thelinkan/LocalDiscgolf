@@ -9,5 +9,7 @@ data class PlayerSessionRow(
     val status: String,
     val playerCount: Int,
     val totalThrows: Int?,
-    val totalRelativeToPar: Int?
+    val totalRelativeToPar: Int?,
+    val playedHoleCount: Int,
+    val totalHoleCount: Int
 )

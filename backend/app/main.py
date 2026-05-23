@@ -328,21 +328,41 @@ def get_course_endpoint(course_id: int) -> dict:
 
 @app.get("/courses/{course_id}/layouts")
 def get_course_layouts(course_id: int) -> list[dict]:
+    course = fetch_one(
+        """
+        SELECT id, name, is_active
+        FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
     sql = """
         SELECT
             l.id,
             l.course_id,
+            c.name AS course_name,
             l.name,
             l.description,
             l.is_active,
-            (
-                SELECT COUNT(*)
-                FROM layout_hole lh
-                WHERE lh.layout_id = l.id
-            ) AS hole_count
+            COUNT(lh.id) AS hole_count,
+            COALESCE(SUM(hv.par_value), 0) AS total_par,
+            COALESCE(SUM(hv.length_meters), 0) AS total_length_meters
         FROM layout l
+        INNER JOIN course c ON c.id = l.course_id
+        LEFT JOIN layout_hole lh ON lh.layout_id = l.id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
         WHERE l.course_id = :course_id
           AND l.is_active = 1
+        GROUP BY
+            l.id,
+            l.course_id,
+            c.name,
+            l.name,
+            l.description,
+            l.is_active
         ORDER BY l.name
     """
     return fetch_all(sql, {"course_id": course_id})

@@ -2,22 +2,23 @@
 import argparse
 import json
 from pathlib import Path
-import bcrypt
 
 import mysql.connector
-
+import bcrypt
 
 DEFAULT_PASSWORD = "changethis"
+
+
+def load_json(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
 
 def hash_password(plain_password: str) -> str:
     return bcrypt.hashpw(
         plain_password.encode("utf-8"),
         bcrypt.gensalt()
     ).decode("utf-8")
-
-def load_json(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def get_conn(args):
@@ -102,16 +103,34 @@ def ensure_player(cur, name, owner_user_id, created_by_user_id, is_guest):
         )
 
 
+def ensure_user_player_permission(cur, source_user_id, target_player_id, permission_level):
+    cur.execute(
+        """
+        INSERT INTO user_player_permission (
+            source_user_id, target_player_id, permission_level
+        )
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            permission_level = VALUES(permission_level)
+        """,
+        (source_user_id, target_player_id, permission_level),
+    )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Seed users and players into MariaDB.")
+    parser = argparse.ArgumentParser(description="Seed users, players and permissions into MariaDB.")
     parser.add_argument("json_file", help="Path to seed JSON file")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3306)
     parser.add_argument("--user", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--database", required=True)
-    parser.add_argument("--default-password", default=DEFAULT_PASSWORD,
-                    help="Plain password to use for all seeded users")
+    parser.add_argument(
+        "--default-password",
+        default=DEFAULT_PASSWORD,
+        help="Plain password to use for all seeded users"
+    )
+
     args = parser.parse_args()
     password_hash = hash_password(args.default_password)
 
@@ -148,18 +167,38 @@ def main():
             )
             player_ids[player["name"]] = player_id
 
+        for permission in payload.get("permissions", []):
+            source_user_id = user_ids[permission["source_username"]]
+            target_player_id = player_ids[permission["target_player_name"]]
+
+            ensure_user_player_permission(
+                cur,
+                source_user_id=source_user_id,
+                target_player_id=target_player_id,
+                permission_level=permission["permission_level"],
+            )
+
         conn.commit()
 
         print("Seed complete.")
         print("Users:")
         for username, user_id in user_ids.items():
             print(f"  {username}: {user_id}")
+
         print("Players:")
         for name, player_id in player_ids.items():
             print(f"  {name}: {player_id}")
+
+        print("Permissions:")
+        for permission in payload.get("permissions", []):
+            print(
+                f"  {permission['source_username']} -> "
+                f"{permission['target_player_name']}: "
+                f"{permission['permission_level']}"
+            )
+
         print()
-        print("Note: the default password hash in this script is a placeholder.")
-        print("Replace it with a real bcrypt/argon2 hash for 'changethis' before real use.")
+        print("Guest players can only be used by the user who created them.")
     except Exception:
         conn.rollback()
         raise

@@ -50,6 +50,7 @@ import nu.linkan.localdiscgolf.ui.dialogs.AddLayoutDialog
 import nu.linkan.localdiscgolf.ui.dialogs.EditHoleDialog
 import nu.linkan.localdiscgolf.ui.dialogs.HoleVariantsDialog
 import nu.linkan.localdiscgolf.ui.dialogs.NameInputDialog
+import nu.linkan.localdiscgolf.ui.components.HoleRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -507,51 +508,4 @@ fun LayoutDetailScreen(
     }
 }
 
-@Composable
-fun HoleRow(
-    hole: HoleEntity,
-    onClick: () -> Unit,
-    onEditClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable { onClick() }
-                .padding(vertical = 4.dp)
-        ) {
-            Text(
-                text = "Hål ${hole.holeNumber}" + (hole.name?.let { " - $it" } ?: ""),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "Längd: ${hole.lengthMeters} m, Par: ${hole.parValue}",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (!hole.notes.isNullOrBlank()) {
-                Text(
-                    text = hole.notes,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Text(
-                text = "Tryck för utkast/korgplaceringar",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        IconButton(onClick = onEditClick) {
-            Icon(
-                imageVector = Icons.Filled.Edit,
-                contentDescription = "Redigera hål"
-            )
-        }
-    }
-}
 

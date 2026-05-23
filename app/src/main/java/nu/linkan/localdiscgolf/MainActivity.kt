@@ -104,7 +104,7 @@ import nu.linkan.localdiscgolf.ui.screens.PlayersScreen
 import nu.linkan.localdiscgolf.ui.screens.CoursesScreen
 import nu.linkan.localdiscgolf.ui.screens.CourseDetailScreen
 import nu.linkan.localdiscgolf.ui.screens.LayoutDetailScreen
-import nu.linkan.localdiscgolf.ui.screens.HoleRow
+import nu.linkan.localdiscgolf.ui.components.HoleRow
 import nu.linkan.localdiscgolf.ui.screens.RoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.screens.ScoreBadge

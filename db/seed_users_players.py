@@ -2,6 +2,8 @@
 import argparse
 import json
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 import mysql.connector
 import bcrypt
@@ -119,12 +121,14 @@ def ensure_user_player_permission(cur, source_user_id, target_player_id, permiss
 
 def main():
     parser = argparse.ArgumentParser(description="Seed users, players and permissions into MariaDB.")
+    load_dotenv()
     parser.add_argument("json_file", help="Path to seed JSON file")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=3306)
-    parser.add_argument("--user", required=True)
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--database", required=True)
+
+    parser.add_argument("--host", default=os.getenv("DB_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("DB_PORT", "3306")))
+    parser.add_argument("--user", default=os.getenv("DB_USER"))
+    parser.add_argument("--password", default=os.getenv("DB_PASSWORD"))
+    parser.add_argument("--database", default=os.getenv("DB_NAME"))
     parser.add_argument(
         "--default-password",
         default=DEFAULT_PASSWORD,
@@ -132,6 +136,10 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    if not args.user or not args.password or not args.database:
+        raise ValueError("DB_USER, DB_PASSWORD och DB_NAME måste finnas i .env eller anges som argument.")
+        
     password_hash = hash_password(args.default_password)
 
     payload = load_json(Path(args.json_file))

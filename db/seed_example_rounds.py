@@ -303,12 +303,14 @@ def import_rounds(conn, payload):
 
 def main():
     parser = argparse.ArgumentParser(description="Seed example rounds into MariaDB.")
-    parser.add_argument("json_file", help="Path to rounds seed JSON file")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=3306)
-    parser.add_argument("--user", required=True)
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--database", required=True)
+    load_dotenv()
+    parser.add_argument("json_file", help="Path to seed JSON file")
+
+    parser.add_argument("--host", default=os.getenv("DB_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("DB_PORT", "3306")))
+    parser.add_argument("--user", default=os.getenv("DB_USER"))
+    parser.add_argument("--password", default=os.getenv("DB_PASSWORD"))
+    parser.add_argument("--database", default=os.getenv("DB_NAME"))
     args = parser.parse_args()
 
     payload = load_json(Path(args.json_file))

@@ -256,12 +256,14 @@ def import_course(conn, payload: dict, created_by_user_id=None):
 
 def main():
     parser = argparse.ArgumentParser(description='Import a course JSON into MariaDB.')
-    parser.add_argument('json_file', help='Path to course JSON file')
-    parser.add_argument('--host', default='127.0.0.1')
-    parser.add_argument('--port', type=int, default=3306)
-    parser.add_argument('--user', required=True)
-    parser.add_argument('--password', required=True)
-    parser.add_argument('--database', required=True)
+    load_dotenv()
+    parser.add_argument("json_file", help="Path to seed JSON file")
+
+    parser.add_argument("--host", default=os.getenv("DB_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("DB_PORT", "3306")))
+    parser.add_argument("--user", default=os.getenv("DB_USER"))
+    parser.add_argument("--password", default=os.getenv("DB_PASSWORD"))
+    parser.add_argument("--database", default=os.getenv("DB_NAME"))
     parser.add_argument('--created-by-user-id', type=int, default=None)
     args = parser.parse_args()
 

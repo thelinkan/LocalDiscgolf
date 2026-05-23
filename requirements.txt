@@ -1,2 +1,7 @@
 bcrypt==5.0.0
 mysql-connector-python==9.7.0
+fastapi
+uvicorn
+sqlalchemy
+pymysql
+python-dotenv

@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, Connection
 from dotenv import load_dotenv
 import os
 
@@ -45,3 +45,7 @@ def execute_write(sql: str, params: dict | None = None) -> int:
             return result.lastrowid or 0
         except Exception:
             return 0
+            
+def run_in_transaction(func: Callable[[Connection], object]) -> object:
+    with engine.begin() as conn:
+        return func(conn)

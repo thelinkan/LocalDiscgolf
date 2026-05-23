@@ -4,7 +4,8 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from app.db import fetch_all, fetch_one, execute_write
+from sqlalchemy import text
+from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
 
 app = FastAPI(title="LocalDiscgolf API")
 
@@ -44,6 +45,24 @@ class CompleteRoundRequest(BaseModel):
 # Hjälpfunktioner
 # =========================
 
+def tx_fetch_one(conn, sql: str, params: dict | None = None) -> dict | None:
+    result = conn.execute(text(sql), params or {})
+    row = result.first()
+    return dict(row._mapping) if row else None
+
+
+def tx_fetch_all(conn, sql: str, params: dict | None = None) -> list[dict]:
+    result = conn.execute(text(sql), params or {})
+    return [dict(row._mapping) for row in result]
+
+
+def tx_execute_write(conn, sql: str, params: dict | None = None) -> int:
+    result = conn.execute(text(sql), params or {})
+    try:
+        return result.lastrowid or 0
+    except Exception:
+        return 0
+        
 def get_round_progress_summary(round_id: int, up_to_sequence_number: int) -> list[dict]:
     sql = """
         SELECT
@@ -593,100 +612,107 @@ def get_current_round_state(round_id: int) -> dict:
 @app.post("/rounds")
 def create_round(request: CreateRoundRequest) -> dict:
     created_by = get_user_by_username(request.created_by_username)
-    course = get_course(request.course_id)
+    get_course(request.course_id)
 
     if not request.players:
         raise HTTPException(status_code=400, detail="Round must contain at least one player")
 
-    play_session_id = execute_write(
-        """
-        INSERT INTO play_session (
-            course_id, created_by_user_id, started_at, ended_at, status
-        )
-        VALUES (
-            :course_id, :created_by_user_id, :started_at, NULL, 'in_progress'
-        )
-        """,
-        {
-            "course_id": request.course_id,
-            "created_by_user_id": created_by["id"],
-            "started_at": request.started_at,
-        },
-    )
-
-    seen_player_ids = set()
-
-    for idx, round_player in enumerate(request.players, start=1):
-        if round_player.player_id in seen_player_ids:
-            raise HTTPException(status_code=400, detail="Duplicate player in round")
-        seen_player_ids.add(round_player.player_id)
-
-        player = get_player(round_player.player_id)
-        layout = get_layout(round_player.layout_id, request.course_id)
-        layout_holes = get_layout_holes(round_player.layout_id)
-
-        approval_required, approval_state, approved_by_user_id = determine_approval(
-            source_user_id=created_by["id"],
-            player=player,
-        )
-
-        session_player_id = execute_write(
+    def _create_round_tx(conn):
+        play_session_id = tx_execute_write(
+            conn,
             """
-            INSERT INTO session_player (
-                play_session_id, player_id, layout_id, display_name_snapshot,
-                start_order, added_by_user_id, approval_required, approval_state,
-                approved_by_user_id, approved_at
+            INSERT INTO play_session (
+                course_id, created_by_user_id, started_at, ended_at, status
             )
             VALUES (
-                :play_session_id, :player_id, :layout_id, :display_name_snapshot,
-                :start_order, :added_by_user_id, :approval_required, :approval_state,
-                :approved_by_user_id, :approved_at
+                :course_id, :created_by_user_id, :started_at, NULL, 'in_progress'
             )
             """,
             {
-                "play_session_id": play_session_id,
-                "player_id": player["id"],
-                "layout_id": layout["id"],
-                "display_name_snapshot": player["name"],
-                "start_order": idx,
-                "added_by_user_id": created_by["id"],
-                "approval_required": approval_required,
-                "approval_state": approval_state,
-                "approved_by_user_id": approved_by_user_id,
-                "approved_at": request.started_at if approval_state == "approved" else None,
+                "course_id": request.course_id,
+                "created_by_user_id": created_by["id"],
+                "started_at": request.started_at,
             },
         )
 
-        for hole in layout_holes:
-            execute_write(
+        seen_player_ids = set()
+
+        for idx, round_player in enumerate(request.players, start=1):
+            if round_player.player_id in seen_player_ids:
+                raise HTTPException(status_code=400, detail="Duplicate player in round")
+            seen_player_ids.add(round_player.player_id)
+
+            player = get_player(round_player.player_id)
+            layout = get_layout(round_player.layout_id, request.course_id)
+            layout_holes = get_layout_holes(round_player.layout_id)
+
+            approval_required, approval_state, approved_by_user_id = determine_approval(
+                source_user_id=created_by["id"],
+                player=player,
+            )
+
+            session_player_id = tx_execute_write(
+                conn,
                 """
-                INSERT INTO session_player_hole (
-                    session_player_id, sequence_number, course_id, hole_id, hole_variant_id,
-                    hole_number_snapshot, hole_name_snapshot, tee_name_snapshot, basket_name_snapshot,
-                    length_snapshot_meters, par_snapshot, throws_count, is_completed
+                INSERT INTO session_player (
+                    play_session_id, player_id, layout_id, display_name_snapshot,
+                    start_order, added_by_user_id, approval_required, approval_state,
+                    approved_by_user_id, approved_at
                 )
                 VALUES (
-                    :session_player_id, :sequence_number, :course_id, :hole_id, :hole_variant_id,
-                    :hole_number_snapshot, :hole_name_snapshot, :tee_name_snapshot, :basket_name_snapshot,
-                    :length_snapshot_meters, :par_snapshot, NULL, 0
+                    :play_session_id, :player_id, :layout_id, :display_name_snapshot,
+                    :start_order, :added_by_user_id, :approval_required, :approval_state,
+                    :approved_by_user_id, :approved_at
                 )
                 """,
                 {
-                    "session_player_id": session_player_id,
-                    "sequence_number": hole["sequence_number"],
-                    "course_id": request.course_id,
-                    "hole_id": hole["hole_id"],
-                    "hole_variant_id": hole["hole_variant_id"],
-                    "hole_number_snapshot": hole["hole_number"],
-                    "hole_name_snapshot": hole["hole_name"],
-                    "tee_name_snapshot": hole["tee_name"],
-                    "basket_name_snapshot": hole["basket_name"],
-                    "length_snapshot_meters": hole["length_meters"],
-                    "par_snapshot": hole["par_value"],
+                    "play_session_id": play_session_id,
+                    "player_id": player["id"],
+                    "layout_id": layout["id"],
+                    "display_name_snapshot": player["name"],
+                    "start_order": idx,
+                    "added_by_user_id": created_by["id"],
+                    "approval_required": approval_required,
+                    "approval_state": approval_state,
+                    "approved_by_user_id": approved_by_user_id,
+                    "approved_at": request.started_at if approval_state == "approved" else None,
                 },
             )
 
-    return get_round_endpoint(play_session_id)
+            for hole in layout_holes:
+                tx_execute_write(
+                    conn,
+                    """
+                    INSERT INTO session_player_hole (
+                        session_player_id, sequence_number, course_id, hole_id, hole_variant_id,
+                        hole_number_snapshot, hole_name_snapshot, tee_name_snapshot, basket_name_snapshot,
+                        length_snapshot_meters, par_snapshot, throws_count, is_completed
+                    )
+                    VALUES (
+                        :session_player_id, :sequence_number, :course_id, :hole_id, :hole_variant_id,
+                        :hole_number_snapshot, :hole_name_snapshot, :tee_name_snapshot, :basket_name_snapshot,
+                        :length_snapshot_meters, :par_snapshot, NULL, 0
+                    )
+                    """,
+                    {
+                        "session_player_id": session_player_id,
+                        "sequence_number": hole["sequence_number"],
+                        "course_id": request.course_id,
+                        "hole_id": hole["hole_id"],
+                        "hole_variant_id": hole["hole_variant_id"],
+                        "hole_number_snapshot": hole["hole_number"],
+                        "hole_name_snapshot": hole["hole_name"],
+                        "tee_name_snapshot": hole["tee_name"],
+                        "basket_name_snapshot": hole["basket_name"],
+                        "length_snapshot_meters": hole["length_meters"],
+                        "par_snapshot": hole["par_value"],
+                    },
+                )
+
+        return play_session_id
+
+    play_session_id = run_in_transaction(_create_round_tx)
+    return get_round_endpoint(int(play_session_id))
 
 
 @app.patch("/rounds/{round_id}/holes/{sequence_number}")

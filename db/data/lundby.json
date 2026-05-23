@@ -1,0 +1,234 @@
+{
+  "course": {
+    "name": "Lundby",
+    "holes": [
+      {
+        "hole_number": 1,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 80, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 109, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 2,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 69, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 103, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 3,
+        "name": null,
+        "tees": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gron", "basket_key": "gron", "length_meters": 141, "par_value": 4 },
+          { "key": "bla", "tee_key": "bla", "basket_key": "bla", "length_meters": 219, "par_value": 5 }
+        ]
+      },
+      {
+        "hole_number": 4,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 114, "par_value": 4 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 153, "par_value": 4 }
+        ]
+      },
+      {
+        "hole_number": 5,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 66, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 85, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 6,
+        "name": null,
+        "tees": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gron", "basket_key": "gron", "length_meters": 62, "par_value": 3 },
+          { "key": "bla", "tee_key": "bla", "basket_key": "bla", "length_meters": 111, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 7,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "variants": [
+          { "key": "shared", "tee_key": "gul", "basket_key": "gul", "length_meters": 77, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 8,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 78, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 113, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 9,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 84, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 97, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 10,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "variants": [
+          { "key": "shared", "tee_key": "gul", "basket_key": "gul", "length_meters": 86, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 11,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 67, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 120, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 12,
+        "name": null,
+        "tees": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "baskets": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gron", "basket_key": "gul", "length_meters": 138, "par_value": 4 },
+          { "key": "bla", "tee_key": "bla", "basket_key": "gul", "length_meters": 254, "par_value": 5 }
+        ]
+      },
+      {
+        "hole_number": 13,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 95, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 131, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 14,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 165, "par_value": 4 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 204, "par_value": 4 }
+        ]
+      },
+      {
+        "hole_number": 15,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 85, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 108, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 16,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 133, "par_value": 4 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 166, "par_value": 4 }
+        ]
+      },
+      {
+        "hole_number": 17,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gron", "name": "Grön", "sort_order": 1 }, { "key": "bla", "name": "Blå", "sort_order": 2 }],
+        "variants": [
+          { "key": "gron", "tee_key": "gul", "basket_key": "gron", "length_meters": 66, "par_value": 3 },
+          { "key": "bla", "tee_key": "gul", "basket_key": "bla", "length_meters": 91, "par_value": 3 }
+        ]
+      },
+      {
+        "hole_number": 18,
+        "name": null,
+        "tees": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "baskets": [{ "key": "gul", "name": "Gul", "sort_order": 1 }],
+        "variants": [
+          { "key": "shared", "tee_key": "gul", "basket_key": "gul", "length_meters": 76, "par_value": 3 }
+        ]
+      }
+    ],
+    "layouts": [
+      {
+        "name": "Grön",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "gron" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "gron" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "gron" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "gron" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "gron" },
+          { "sequence_number": 6, "hole_number": 6, "variant_key": "gron" },
+          { "sequence_number": 7, "hole_number": 7, "variant_key": "shared" },
+          { "sequence_number": 8, "hole_number": 8, "variant_key": "gron" },
+          { "sequence_number": 9, "hole_number": 9, "variant_key": "gron" },
+          { "sequence_number": 10, "hole_number": 10, "variant_key": "shared" },
+          { "sequence_number": 11, "hole_number": 11, "variant_key": "gron" },
+          { "sequence_number": 12, "hole_number": 12, "variant_key": "gron" },
+          { "sequence_number": 13, "hole_number": 13, "variant_key": "gron" },
+          { "sequence_number": 14, "hole_number": 14, "variant_key": "gron" },
+          { "sequence_number": 15, "hole_number": 15, "variant_key": "gron" },
+          { "sequence_number": 16, "hole_number": 16, "variant_key": "gron" },
+          { "sequence_number": 17, "hole_number": 17, "variant_key": "gron" },
+          { "sequence_number": 18, "hole_number": 18, "variant_key": "shared" }
+        ]
+      },
+      {
+        "name": "Blå",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "bla" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "bla" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "bla" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "bla" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "bla" },
+          { "sequence_number": 6, "hole_number": 6, "variant_key": "bla" },
+          { "sequence_number": 7, "hole_number": 7, "variant_key": "shared" },
+          { "sequence_number": 8, "hole_number": 8, "variant_key": "bla" },
+          { "sequence_number": 9, "hole_number": 9, "variant_key": "bla" },
+          { "sequence_number": 10, "hole_number": 10, "variant_key": "shared" },
+          { "sequence_number": 11, "hole_number": 11, "variant_key": "bla" },
+          { "sequence_number": 12, "hole_number": 12, "variant_key": "bla" },
+          { "sequence_number": 13, "hole_number": 13, "variant_key": "bla" },
+          { "sequence_number": 14, "hole_number": 14, "variant_key": "bla" },
+          { "sequence_number": 15, "hole_number": 15, "variant_key": "bla" },
+          { "sequence_number": 16, "hole_number": 16, "variant_key": "bla" },
+          { "sequence_number": 17, "hole_number": 17, "variant_key": "bla" },
+          { "sequence_number": 18, "hole_number": 18, "variant_key": "shared" }
+        ]
+      }
+    ]
+  }
+}

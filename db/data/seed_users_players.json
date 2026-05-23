@@ -1,0 +1,45 @@
+{
+  "users": [
+    {
+      "username": "Linkan",
+      "email": "linkan@example.com",
+      "role": "admin"
+    },
+    {
+      "username": "Wilhelm",
+      "email": "wilhelm@example.com",
+      "role": "player"
+    },
+    {
+      "username": "Anna",
+      "email": "anna@example.com",
+      "role": "player"
+    }
+  ],
+  "players": [
+    {
+      "name": "Linkan",
+      "owner_username": "Linkan",
+      "created_by_username": "Linkan",
+      "is_guest": false
+    },
+    {
+      "name": "Wilhelm",
+      "owner_username": "Wilhelm",
+      "created_by_username": "Wilhelm",
+      "is_guest": false
+    },
+    {
+      "name": "Anna",
+      "owner_username": "Anna",
+      "created_by_username": "Anna",
+      "is_guest": false
+    },
+    {
+      "name": "Ludvig",
+      "owner_username": null,
+      "created_by_username": "Linkan",
+      "is_guest": true
+    }
+  ]
+}

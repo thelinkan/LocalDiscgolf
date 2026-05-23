@@ -1,0 +1,159 @@
+{
+  "course": {
+    "name": "Gånsta",
+    "holes": [
+      { "hole_number": 1, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 88, "par_value": 3 }] },
+      { "hole_number": 2, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 80, "par_value": 3 }] },
+      { "hole_number": 3, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 105, "par_value": 3 }] },
+      { "hole_number": 4, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 84, "par_value": 3 }] },
+      { "hole_number": 5, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 78, "par_value": 3 }] },
+      { "hole_number": 6, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 154, "par_value": 4 }] },
+      { "hole_number": 7, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 92, "par_value": 3 }] },
+      { "hole_number": 8, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 79, "par_value": 3 }] },
+      { "hole_number": 9, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 175, "par_value": 4 }] },
+      { "hole_number": 10, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 103, "par_value": 3 }] },
+      { "hole_number": 11, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 96, "par_value": 3 }] },
+      { "hole_number": 12, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 100, "par_value": 3 }] },
+      { "hole_number": 13, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 164, "par_value": 4 }] },
+      { "hole_number": 14, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 112, "par_value": 3 }] },
+      { "hole_number": 15, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 95, "par_value": 3 }] },
+      { "hole_number": 16, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 102, "par_value": 3 }] },
+      { "hole_number": 17, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 92, "par_value": 3 }] },
+      { "hole_number": 18, "name": null, "tees": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "baskets": [{ "key": "default", "name": "Standard", "sort_order": 1 }], "variants": [{ "key": "default", "tee_key": "default", "basket_key": "default", "length_meters": 110, "par_value": 3 }] }
+    ],
+    "layouts": [
+      {
+        "name": "Första 6 uppsatta",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 6, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 8, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "Första 9 uppsatta",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 6, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 8, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 10, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 11, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "Lunchnian med 15",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 14, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 15, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "Wilhelm-nian med 15",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 8, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 16, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "16 hål (ej 16 och 18)",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 6, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 8, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 9, "variant_key": "default" },
+          { "sequence_number": 10, "hole_number": 10, "variant_key": "default" },
+          { "sequence_number": 11, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 12, "hole_number": 12, "variant_key": "default" },
+          { "sequence_number": 13, "hole_number": 13, "variant_key": "default" },
+          { "sequence_number": 14, "hole_number": 14, "variant_key": "default" },
+          { "sequence_number": 15, "hole_number": 15, "variant_key": "default" },
+          { "sequence_number": 16, "hole_number": 17, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "17 hål (ej 18)",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 6, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 8, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 9, "variant_key": "default" },
+          { "sequence_number": 10, "hole_number": 10, "variant_key": "default" },
+          { "sequence_number": 11, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 12, "hole_number": 12, "variant_key": "default" },
+          { "sequence_number": 13, "hole_number": 13, "variant_key": "default" },
+          { "sequence_number": 14, "hole_number": 14, "variant_key": "default" },
+          { "sequence_number": 15, "hole_number": 15, "variant_key": "default" },
+          { "sequence_number": 16, "hole_number": 16, "variant_key": "default" },
+          { "sequence_number": 17, "hole_number": 17, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "Lunchnian",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 14, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 16, "variant_key": "default" }
+        ]
+      },
+      {
+        "name": "Wilhelm-nian",
+        "description": null,
+        "holes": [
+          { "sequence_number": 1, "hole_number": 1, "variant_key": "default" },
+          { "sequence_number": 2, "hole_number": 2, "variant_key": "default" },
+          { "sequence_number": 3, "hole_number": 3, "variant_key": "default" },
+          { "sequence_number": 4, "hole_number": 4, "variant_key": "default" },
+          { "sequence_number": 5, "hole_number": 5, "variant_key": "default" },
+          { "sequence_number": 6, "hole_number": 7, "variant_key": "default" },
+          { "sequence_number": 7, "hole_number": 8, "variant_key": "default" },
+          { "sequence_number": 8, "hole_number": 11, "variant_key": "default" },
+          { "sequence_number": 9, "hole_number": 16, "variant_key": "default" }
+        ]
+      }
+    ]
+  }
+}

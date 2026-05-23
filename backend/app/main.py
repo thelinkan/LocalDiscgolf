@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
 
+import bcrypt
 app = FastAPI(title="LocalDiscgolf API")
 
 
@@ -40,6 +41,15 @@ class CompleteRoundRequest(BaseModel):
     completed_by_username: str
     ended_at: datetime
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    username: str
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 # =========================
 # Hjälpfunktioner
@@ -285,6 +295,40 @@ def get_session_player(round_id: int, player_id: int) -> dict | None:
         {"round_id": round_id, "player_id": player_id},
     )
 
+def get_user_with_password(username: str) -> dict:
+    user = fetch_one(
+        """
+        SELECT
+            id,
+            username,
+            password_hash,
+            role,
+            is_active,
+            must_change_password
+        FROM user_account
+        WHERE username = :username
+        """,
+        {"username": username},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user["is_active"]:
+        raise HTTPException(status_code=400, detail="User is inactive")
+    return user
+
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        password_hash.encode("utf-8"),
+    )
+
+
+def hash_password(plain_password: str) -> str:
+    return bcrypt.hashpw(
+        plain_password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
 
 # =========================
 # Befintliga GET-endpoints
@@ -756,6 +800,52 @@ def get_user_players(username: str) -> dict:
 # =========================
 # Nya skriv-endpoints
 # =========================
+
+@app.post("/change-password")
+def change_password(request: ChangePasswordRequest) -> dict:
+    user = get_user_with_password(request.username)
+
+    if not verify_password(request.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if request.current_password == request.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+
+    new_password_hash = hash_password(request.new_password)
+
+    execute_write(
+        """
+        UPDATE user_account
+        SET
+            password_hash = :password_hash,
+            must_change_password = 0
+        WHERE id = :user_id
+        """,
+        {
+            "password_hash": new_password_hash,
+            "user_id": user["id"],
+        },
+    )
+
+    return {
+        "message": "Password changed successfully",
+        "username": user["username"],
+        "must_change_password": False,
+    }
+
+@app.post("/login")
+def login(request: LoginRequest) -> dict:
+    user = get_user_with_password(request.username)
+
+    if not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return {
+        "user_id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "must_change_password": bool(user["must_change_password"]),
+    }
 
 @app.post("/rounds")
 def create_round(request: CreateRoundRequest) -> dict:

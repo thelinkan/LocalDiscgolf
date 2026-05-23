@@ -103,8 +103,8 @@ def ensure_player(cur, name, owner_user_id, created_by_user_id, is_guest):
 
 
 def main():
-    password_hash = hash_password(args.default_password)
     parser = argparse.ArgumentParser(description="Seed users and players into MariaDB.")
+    password_hash = hash_password(args.default_password)
     parser.add_argument("json_file", help="Path to seed JSON file")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3306)

@@ -1,0 +1,6 @@
+python3 seed_users_players.py data/seed_users_players.json \
+  --host 127.0.0.1 \
+  --port 3306 \
+  --user ditt_anvandarnamn \
+  --password ditt_losenord \
+  --database discgolf

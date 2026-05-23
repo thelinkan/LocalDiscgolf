@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, Connection
+from collections.abc import Callable
 from dotenv import load_dotenv
 import os
 

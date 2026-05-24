@@ -99,6 +99,54 @@ data class PlayerRoundApiResponse(
     val total_throws: Int,
     val total_par: Int,
     val played_holes: Int,
-    val layout_hole_count: Int
+    val layout_hole_count: Int,
+    val player_count: Int
 )
 
+data class RoundDetailApiResponse(
+    val id: Long,
+    val course_id: Long,
+    val course_name: String,
+    val created_by_user_id: Long,
+    val created_by_username: String,
+    val started_at: String,
+    val ended_at: String?,
+    val status: String,
+    val players: List<RoundDetailPlayerApiResponse>
+)
+
+data class RoundDetailPlayerApiResponse(
+    val id: Long,
+    val play_session_id: Long,
+    val player_id: Long,
+    val player_name: String,
+    val layout_id: Long?,
+    val layout_name: String?,
+    val display_name_snapshot: String?,
+    val start_order: Int,
+    val added_by_user_id: Long,
+    val added_by_username: String,
+    val approval_required: Int,
+    val approval_state: String,
+    val approved_by_user_id: Long?,
+    val approved_by_username: String?,
+    val approved_at: String?,
+    val holes: List<RoundDetailHoleApiResponse>
+)
+
+data class RoundDetailHoleApiResponse(
+    val id: Long,
+    val session_player_id: Long,
+    val sequence_number: Int,
+    val course_id: Long,
+    val hole_id: Long,
+    val hole_variant_id: Long?,
+    val hole_number_snapshot: Int,
+    val hole_name_snapshot: String?,
+    val tee_name_snapshot: String?,
+    val basket_name_snapshot: String?,
+    val length_snapshot_meters: Int,
+    val par_snapshot: Int,
+    val throws_count: Int?,
+    val is_completed: Int
+)

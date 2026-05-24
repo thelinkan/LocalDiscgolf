@@ -116,13 +116,14 @@ import nu.linkan.localdiscgolf.ui.screens.ApiPlayersScreen
 import nu.linkan.localdiscgolf.ui.screens.LoginScreen
 import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiPlayerRoundsScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiRoundDetailScreen
 
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
 import nu.linkan.localdiscgolf.network.LayoutHoleApiResponse
 import nu.linkan.localdiscgolf.network.UserPlayersResponse
 import nu.linkan.localdiscgolf.network.PlayerRoundApiResponse
-
+import nu.linkan.localdiscgolf.network.RoundDetailApiResponse
 
 import android.content.Context
 import android.widget.Toast
@@ -163,6 +164,7 @@ class MainActivity : ComponentActivity() {
                 var apiUserPlayers by remember { mutableStateOf<UserPlayersResponse?>(null) }
                 var apiPlayerRounds by remember { mutableStateOf<List<PlayerRoundApiResponse>>(emptyList()) }
                 var selectedApiPlayerName by remember { mutableStateOf("") }
+                var apiRoundDetail by remember { mutableStateOf<RoundDetailApiResponse?>(null) }
 
                 val navController = rememberNavController()
 
@@ -350,6 +352,32 @@ class MainActivity : ComponentActivity() {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte hämta serverspelare: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    apiRoundDetail = apiRoundDetail,
+                    onLoadApiRoundDetail = { roundId ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getRoundDetail(baseUrl, authToken, roundId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { detail ->
+                                        apiRoundDetail = detail
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta runddetalj: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -812,6 +840,8 @@ fun AppNavHost(
     apiPlayerRounds: List<PlayerRoundApiResponse>,
     selectedApiPlayerName: String,
     onLoadApiPlayerRounds: (Long, String) -> Unit,
+    apiRoundDetail: RoundDetailApiResponse?,
+    onLoadApiRoundDetail: (Long) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -935,6 +965,17 @@ fun AppNavHost(
             ApiPlayerRoundsScreen(
                 playerName = selectedApiPlayerName,
                 rounds = apiPlayerRounds,
+                onBack = { navController.popBackStack() },
+                onRoundClick = { roundId ->
+                    onLoadApiRoundDetail(roundId)
+                    navController.navigate("api_round_detail")
+                }
+            )
+        }
+
+        composable("api_round_detail") {
+            ApiRoundDetailScreen(
+                round = apiRoundDetail,
                 onBack = { navController.popBackStack() }
             )
         }

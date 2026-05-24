@@ -951,7 +951,12 @@ def get_player_rounds(
             SUM(CASE WHEN sph.throws_count IS NOT NULL THEN sph.throws_count ELSE 0 END) AS total_throws,
             SUM(CASE WHEN sph.throws_count IS NOT NULL THEN sph.par_snapshot ELSE 0 END) AS total_par,
             SUM(CASE WHEN sph.throws_count IS NOT NULL THEN 1 ELSE 0 END) AS played_holes,
-            COUNT(*) AS layout_hole_count
+            COUNT(*) AS layout_hole_count,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp2
+                WHERE sp2.play_session_id = ps.id
+            ) AS player_count
         FROM session_player sp
         INNER JOIN play_session ps ON ps.id = sp.play_session_id
         INNER JOIN course c ON c.id = ps.course_id

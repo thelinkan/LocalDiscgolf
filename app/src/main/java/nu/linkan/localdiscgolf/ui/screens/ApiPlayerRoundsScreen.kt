@@ -79,6 +79,12 @@ fun ApiPlayerRoundsScreen(
                         ""
                     }
 
+                    val togetherText = when (round.player_count) {
+                        1 -> "Själv"
+                        2 -> "Tillsammans med 1 annan spelare"
+                        else -> "Tillsammans med ${round.player_count - 1} andra spelare"
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -92,6 +98,11 @@ fun ApiPlayerRoundsScreen(
                                 "${round.course_name} - ${round.layout_name}"
                             },
                             style = MaterialTheme.typography.titleMedium
+                        )
+
+                        Text(
+                            text = togetherText,
+                            style = MaterialTheme.typography.bodyMedium
                         )
 
                         Text(

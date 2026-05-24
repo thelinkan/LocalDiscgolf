@@ -21,19 +21,20 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import nu.linkan.localdiscgolf.network.CourseApiResponse
+import nu.linkan.localdiscgolf.network.LayoutApiResponse
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ApiCoursesScreen(
-    courses: List<CourseApiResponse>,
+fun ApiCourseLayoutsScreen(
+    courseName: String,
+    layouts: List<LayoutApiResponse>,
     onBack: () -> Unit,
-    onCourseClick: (Long) -> Unit
+    onLayoutClick: (Long) -> Unit = {}
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Serverbanor") },
+                title = { Text(courseName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -45,14 +46,14 @@ fun ApiCoursesScreen(
             )
         }
     ) { innerPadding ->
-        if (courses.isEmpty()) {
+        if (layouts.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(16.dp)
             ) {
-                Text("Inga serverbanor hittades.")
+                Text("Inga layouter hittades.")
             }
         } else {
             LazyColumn(
@@ -62,21 +63,29 @@ fun ApiCoursesScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(courses) { course ->
+                items(layouts) { layout ->
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onCourseClick(course.id) }
+                            .clickable { onLayoutClick(layout.id) }
                             .padding(vertical = 8.dp)
                     ) {
                         Text(
-                            text = course.name,
+                            text = layout.name,
                             style = MaterialTheme.typography.titleMedium
                         )
+
                         Text(
-                            text = "${course.hole_count} hål • ${course.layout_count} layouter",
+                            text = "${layout.hole_count} hål • par ${layout.total_par} • ${layout.total_length_meters} m",
                             style = MaterialTheme.typography.bodyMedium
                         )
+
+                        if (!layout.description.isNullOrBlank()) {
+                            Text(
+                                text = layout.description,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                     HorizontalDivider()
                 }

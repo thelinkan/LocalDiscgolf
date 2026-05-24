@@ -29,3 +29,15 @@ data class CourseApiResponse(
     val hole_count: Int,
     val layout_count: Int
 )
+
+data class LayoutApiResponse(
+    val id: Long,
+    val course_id: Long,
+    val course_name: String,
+    val name: String,
+    val description: String?,
+    val is_active: Int,
+    val hole_count: Int,
+    val total_par: Int,
+    val total_length_meters: Int
+)

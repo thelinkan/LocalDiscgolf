@@ -111,6 +111,8 @@ import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.screens.ScoreBadge
 import nu.linkan.localdiscgolf.ui.screens.ApiCoursesScreen
 import nu.linkan.localdiscgolf.network.CourseApiResponse
+import nu.linkan.localdiscgolf.network.LayoutApiResponse
+import nu.linkan.localdiscgolf.ui.screens.ApiCourseLayoutsScreen
 
 import android.content.Context
 import android.widget.Toast
@@ -148,6 +150,7 @@ class MainActivity : ComponentActivity() {
                 var loggedInUsername by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
 
                 var apiCourses by remember { mutableStateOf<List<CourseApiResponse>>(emptyList()) }
+                var apiLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
 
                 val navController = rememberNavController()
 
@@ -262,6 +265,32 @@ class MainActivity : ComponentActivity() {
                         loggedInUsername = ""
 
                         Toast.makeText(this, "Utloggad", Toast.LENGTH_SHORT).show()
+                    },
+                    apiLayouts = apiLayouts,
+                    onLoadApiLayouts = { courseId ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getCourseLayouts(baseUrl, authToken, courseId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { layouts ->
+                                        apiLayouts = layouts
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta layouter: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
                     },
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
@@ -681,6 +710,8 @@ fun AppNavHost(
     activity: ComponentActivity,
     apiCourses: List<CourseApiResponse>,
     onLoadApiCourses: () -> Unit,
+    apiLayouts: List<LayoutApiResponse>,
+    onLoadApiLayouts: (Long) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -817,6 +848,29 @@ fun AppNavHost(
 
             ApiCoursesScreen(
                 courses = apiCourses,
+                onBack = { navController.popBackStack() },
+                onCourseClick = { courseId ->
+                    navController.navigate("api_course/$courseId")
+                }
+            )
+        }
+
+        composable(
+            route = "api_course/{courseId}",
+            arguments = listOf(
+                navArgument("courseId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val courseId = backStackEntry.arguments?.getLong("courseId") ?: return@composable
+            val course = apiCourses.firstOrNull { it.id == courseId }
+
+            LaunchedEffect(courseId) {
+                onLoadApiLayouts(courseId)
+            }
+
+            ApiCourseLayoutsScreen(
+                courseName = course?.name ?: "Serverlayouter",
+                layouts = apiLayouts,
                 onBack = { navController.popBackStack() }
             )
         }

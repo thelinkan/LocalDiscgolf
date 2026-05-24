@@ -251,4 +251,37 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun createRound(
+        baseUrl: String,
+        token: String,
+        requestBody: CreateRoundApiRequest
+    ): Result<RoundDetailApiResponse> {
+        return try {
+            val bodyJson = gson.toJson(requestBody)
+
+            val request = Request.Builder()
+                .url("$baseUrl/rounds")
+                .header("Authorization", "Bearer $token")
+                .post(bodyJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("POST /rounds responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Create round failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(responseBody, RoundDetailApiResponse::class.java)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

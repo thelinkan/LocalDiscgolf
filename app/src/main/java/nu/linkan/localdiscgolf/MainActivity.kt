@@ -117,6 +117,7 @@ import nu.linkan.localdiscgolf.ui.screens.LoginScreen
 import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiPlayerRoundsScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiRoundDetailScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiNewRoundScreen
 
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
@@ -124,6 +125,8 @@ import nu.linkan.localdiscgolf.network.LayoutHoleApiResponse
 import nu.linkan.localdiscgolf.network.UserPlayersResponse
 import nu.linkan.localdiscgolf.network.PlayerRoundApiResponse
 import nu.linkan.localdiscgolf.network.RoundDetailApiResponse
+import nu.linkan.localdiscgolf.network.CreateRoundApiRequest
+import nu.linkan.localdiscgolf.network.CreateRoundPlayerApiRequest
 
 import android.content.Context
 import android.widget.Toast
@@ -165,6 +168,7 @@ class MainActivity : ComponentActivity() {
                 var apiPlayerRounds by remember { mutableStateOf<List<PlayerRoundApiResponse>>(emptyList()) }
                 var selectedApiPlayerName by remember { mutableStateOf("") }
                 var apiRoundDetail by remember { mutableStateOf<RoundDetailApiResponse?>(null) }
+                var apiNewRoundLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
 
                 val navController = rememberNavController()
 
@@ -378,6 +382,75 @@ class MainActivity : ComponentActivity() {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte hämta runddetalj: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    apiNewRoundLayouts = apiNewRoundLayouts,
+                    onLoadApiNewRoundLayouts = { courseId ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getCourseLayouts(baseUrl, authToken, courseId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { layouts ->
+                                        apiNewRoundLayouts = layouts
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta layouter: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    onCreateApiRound = { courseId, layoutId, playerIds ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val request = CreateRoundApiRequest(
+                                    course_id = courseId,
+                                    started_at = java.time.OffsetDateTime.now().toString(),
+                                    players = playerIds.map { playerId ->
+                                        CreateRoundPlayerApiRequest(
+                                            player_id = playerId,
+                                            layout_id = layoutId
+                                        )
+                                    }
+                                )
+
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.createRound(baseUrl, authToken, request)
+                                }
+
+                                result.fold(
+                                    onSuccess = { round ->
+                                        apiRoundDetail = round
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Serverrunda skapad",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        navController.navigate("api_round_detail")
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte skapa serverrunda: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -842,6 +915,9 @@ fun AppNavHost(
     onLoadApiPlayerRounds: (Long, String) -> Unit,
     apiRoundDetail: RoundDetailApiResponse?,
     onLoadApiRoundDetail: (Long) -> Unit,
+    apiNewRoundLayouts: List<LayoutApiResponse>,
+    onLoadApiNewRoundLayouts: (Long) -> Unit,
+    onCreateApiRound: (Long, Long, List<Long>) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -855,6 +931,7 @@ fun AppNavHost(
                 onServerCoursesClick = { navController.navigate("api_courses") },
                 onServerPlayersClick = { navController.navigate("api_players") },
                 onNewRoundClick = { navController.navigate("new_round") },
+                onNewServerRoundClick = { navController.navigate("api_new_round") },
                 onResumeRoundClick = { navController.navigate("resume_round") },
                 onSettingsClick = { navController.navigate("settings") },
                 onLoginClick = { navController.navigate("login") },
@@ -977,6 +1054,26 @@ fun AppNavHost(
             ApiRoundDetailScreen(
                 round = apiRoundDetail,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("api_new_round") {
+            LaunchedEffect(Unit) {
+                onLoadApiCourses()
+                onLoadApiUserPlayers()
+            }
+
+            ApiNewRoundScreen(
+                courses = apiCourses,
+                layouts = apiNewRoundLayouts,
+                userPlayers = apiUserPlayers,
+                onBack = { navController.popBackStack() },
+                onCourseSelected = { courseId ->
+                    onLoadApiNewRoundLayouts(courseId)
+                },
+                onCreateRound = { courseId, layoutId, playerIds ->
+                    onCreateApiRound(courseId, layoutId, playerIds)
+                }
             )
         }
 
@@ -1467,6 +1564,7 @@ fun StartScreen(
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onServerPlayersClick: () -> Unit,
+    onNewServerRoundClick: () -> Unit,
     loggedInUsername: String?
 ) {
     val isLoggedIn = !loggedInUsername.isNullOrBlank()
@@ -1530,6 +1628,13 @@ fun StartScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Ny runda")
+                }
+
+                Button(
+                    onClick = onNewServerRoundClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ny serverrunda")
                 }
 
                 Button(

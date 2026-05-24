@@ -150,3 +150,14 @@ data class RoundDetailHoleApiResponse(
     val throws_count: Int?,
     val is_completed: Int
 )
+
+data class CreateRoundPlayerApiRequest(
+    val player_id: Long,
+    val layout_id: Long
+)
+
+data class CreateRoundApiRequest(
+    val course_id: Long,
+    val started_at: String,
+    val players: List<CreateRoundPlayerApiRequest>
+)

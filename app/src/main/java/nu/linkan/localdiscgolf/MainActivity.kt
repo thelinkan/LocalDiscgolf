@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -109,6 +110,14 @@ import nu.linkan.localdiscgolf.ui.screens.RoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.screens.ScoreBadge
 
+import android.content.Context
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import nu.linkan.localdiscgolf.network.ApiClient
+import nu.linkan.localdiscgolf.ui.screens.LoginScreen
+import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
+
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -129,6 +138,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LocalDiscgolfTheme {
+                val prefs = getSharedPreferences("api_settings", Context.MODE_PRIVATE)
+
+                var apiHost by remember { mutableStateOf(prefs.getString("host", "") ?: "") }
+                var apiPort by remember { mutableStateOf(prefs.getString("port", "8000") ?: "8000") }
+                var authToken by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
+                var loggedInUsername by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
+
                 val navController = rememberNavController()
 
                 var players by remember { mutableStateOf<List<PlayerEntity>>(emptyList()) }
@@ -196,6 +212,16 @@ class MainActivity : ComponentActivity() {
                     roundSummaryHeaderBySession = roundSummaryHeaderBySession,
                     playerListRows = playerListRows,
                     courseListRows = courseListRows,
+                    apiHost = apiHost,
+                    apiPort = apiPort,
+                    authToken = authToken,
+                    loggedInUsername = loggedInUsername,
+                    onApiHostChange = { apiHost = it },
+                    onApiPortChange = { apiPort = it },
+                    onAuthTokenChange = { authToken = it },
+                    onLoggedInUsernameChange = { loggedInUsername = it },
+                    prefs = prefs,
+                    activity = this,
 
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
@@ -602,7 +628,18 @@ fun AppNavHost(
     observeRoundSummaryHeader: (Long) -> Unit,
     playerListRows: List<PlayerListRow>,
     courseListRows: List<CourseListRow>,
+    apiHost: String,
+    apiPort: String,
+    authToken: String,
+    loggedInUsername: String,
+    onApiHostChange: (String) -> Unit,
+    onApiPortChange: (String) -> Unit,
+    onAuthTokenChange: (String) -> Unit,
+    onLoggedInUsernameChange: (String) -> Unit,
+    prefs: android.content.SharedPreferences,
+    activity: ComponentActivity,
 ){
+    val coroutineScope = rememberCoroutineScope()
     NavHost(
         navController = navController,
         startDestination = "start"
@@ -612,7 +649,89 @@ fun AppNavHost(
                 onPlayersClick = { navController.navigate("players") },
                 onCoursesClick = { navController.navigate("courses") },
                 onNewRoundClick = { navController.navigate("new_round") },
-                onResumeRoundClick = { navController.navigate("resume_round") }
+                onResumeRoundClick = { navController.navigate("resume_round") },
+                onSettingsClick = { navController.navigate("settings") },
+                onLoginClick = { navController.navigate("login") }
+            )
+        }
+
+        composable("settings") {
+            SettingsScreen(
+                currentHost = apiHost,
+                currentPort = apiPort,
+                onBack = { navController.popBackStack() },
+                onSave = { host, port ->
+                    prefs.edit()
+                        .putString("host", host)
+                        .putString("port", port)
+                        .apply()
+
+                    onApiHostChange(host)
+                    onApiPortChange(port)
+
+                    Toast.makeText(activity, "Inställningar sparade", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable("login") {
+            LoginScreen(
+                host = apiHost,
+                port = apiPort,
+                onBack = { navController.popBackStack() },
+                onLogin = { username, password ->
+                    coroutineScope.launch {
+                        val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                        val loginResult = withContext(Dispatchers.IO) {
+                            ApiClient.login(baseUrl, username, password)
+                        }
+
+                        loginResult.fold(
+                            onSuccess = { loginResponse ->
+                                val meResult = withContext(Dispatchers.IO) {
+                                    ApiClient.getMe(baseUrl, loginResponse.access_token)
+                                }
+
+                                meResult.fold(
+                                    onSuccess = {
+                                        prefs.edit()
+                                            .putString("token", loginResponse.access_token)
+                                            .putString("username", loginResponse.username)
+                                            .apply()
+
+                                        onAuthTokenChange(loginResponse.access_token)
+                                        onLoggedInUsernameChange(loginResponse.username)
+
+                                        val message = if (loginResponse.must_change_password) {
+                                            "Inloggad. Lösenordsbyte krävs."
+                                        } else {
+                                            "Inloggad som ${loginResponse.username}"
+                                        }
+
+                                        Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+                                        navController.popBackStack()
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            activity,
+                                            "Login lyckades men /me misslyckades: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            },
+                            onFailure = { error ->
+                                Toast.makeText(
+                                    activity,
+                                    "Inloggning misslyckades: ${error.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
+                    }
+                }
             )
         }
 
@@ -1030,7 +1149,9 @@ fun StartScreen(
     onPlayersClick: () -> Unit,
     onCoursesClick: () -> Unit,
     onNewRoundClick: () -> Unit,
-    onResumeRoundClick: () -> Unit
+    onResumeRoundClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onLoginClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -1070,6 +1191,20 @@ fun StartScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Återuppta runda")
+            }
+
+            Button(
+                onClick = onSettingsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Inställningar")
+            }
+
+            Button(
+                onClick = onLoginClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Logga in")
             }
         }
     }

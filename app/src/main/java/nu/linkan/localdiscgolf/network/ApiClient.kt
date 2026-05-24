@@ -119,4 +119,70 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getLayoutHoles(
+        baseUrl: String,
+        token: String,
+        layoutId: Long
+    ): Result<List<LayoutHoleApiResponse>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/layouts/$layoutId/holes")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /layouts/$layoutId/holes responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /layouts/$layoutId/holes failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, LayoutHoleApiResponse::class.java)
+                    .type
+
+                val parsed: List<LayoutHoleApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getUserPlayers(
+        baseUrl: String,
+        token: String,
+        username: String
+    ): Result<UserPlayersResponse> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/users/$username/players")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /users/$username/players responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /users/$username/players failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(responseBody, UserPlayersResponse::class.java)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

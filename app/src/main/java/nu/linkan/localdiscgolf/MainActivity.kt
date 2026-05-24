@@ -110,17 +110,23 @@ import nu.linkan.localdiscgolf.ui.screens.RoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.screens.ScoreBadge
 import nu.linkan.localdiscgolf.ui.screens.ApiCoursesScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiCourseLayoutsScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiLayoutHolesScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiPlayersScreen
+import nu.linkan.localdiscgolf.ui.screens.LoginScreen
+import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
+
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
-import nu.linkan.localdiscgolf.ui.screens.ApiCourseLayoutsScreen
+import nu.linkan.localdiscgolf.network.LayoutHoleApiResponse
+import nu.linkan.localdiscgolf.network.UserPlayersResponse
+
 
 import android.content.Context
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import nu.linkan.localdiscgolf.network.ApiClient
-import nu.linkan.localdiscgolf.ui.screens.LoginScreen
-import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
 
 import java.time.Instant
 import java.time.ZoneId
@@ -151,6 +157,8 @@ class MainActivity : ComponentActivity() {
 
                 var apiCourses by remember { mutableStateOf<List<CourseApiResponse>>(emptyList()) }
                 var apiLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
+                var apiLayoutHoles by remember { mutableStateOf<List<LayoutHoleApiResponse>>(emptyList()) }
+                var apiUserPlayers by remember { mutableStateOf<UserPlayersResponse?>(null) }
 
                 val navController = rememberNavController()
 
@@ -285,6 +293,59 @@ class MainActivity : ComponentActivity() {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte hämta layouter: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    apiLayoutHoles = apiLayoutHoles,
+                    onLoadApiLayoutHoles = { layoutId ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val result: Result<List<LayoutHoleApiResponse>> = withContext(Dispatchers.IO) {
+                                    ApiClient.getLayoutHoles(baseUrl, authToken, layoutId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { holes: List<LayoutHoleApiResponse> ->
+                                        apiLayoutHoles = holes
+                                    },
+                                    onFailure = { error: Throwable ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta layouthål: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    apiUserPlayers = apiUserPlayers,
+                    onLoadApiUserPlayers = {
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank() || loggedInUsername.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getUserPlayers(baseUrl, authToken, loggedInUsername)
+                                }
+
+                                result.fold(
+                                    onSuccess = { response ->
+                                        apiUserPlayers = response
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta serverspelare: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -712,6 +773,10 @@ fun AppNavHost(
     onLoadApiCourses: () -> Unit,
     apiLayouts: List<LayoutApiResponse>,
     onLoadApiLayouts: (Long) -> Unit,
+    apiLayoutHoles: List<LayoutHoleApiResponse>,
+    onLoadApiLayoutHoles: (Long) -> Unit,
+    apiUserPlayers: UserPlayersResponse?,
+    onLoadApiUserPlayers: () -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -723,6 +788,7 @@ fun AppNavHost(
                 onPlayersClick = { navController.navigate("players") },
                 onCoursesClick = { navController.navigate("courses") },
                 onServerCoursesClick = { navController.navigate("api_courses") },
+                onServerPlayersClick = { navController.navigate("api_players") },
                 onNewRoundClick = { navController.navigate("new_round") },
                 onResumeRoundClick = { navController.navigate("resume_round") },
                 onSettingsClick = { navController.navigate("settings") },
@@ -871,6 +937,40 @@ fun AppNavHost(
             ApiCourseLayoutsScreen(
                 courseName = course?.name ?: "Serverlayouter",
                 layouts = apiLayouts,
+                onBack = { navController.popBackStack() },
+                onLayoutClick = { layoutId ->
+                    navController.navigate("api_layout/$layoutId")
+                }
+            )
+        }
+
+        composable(
+            route = "api_layout/{layoutId}",
+            arguments = listOf(
+                navArgument("layoutId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val layoutId = backStackEntry.arguments?.getLong("layoutId") ?: return@composable
+            val layout = apiLayouts.firstOrNull { it.id == layoutId }
+
+            LaunchedEffect(layoutId) {
+                onLoadApiLayoutHoles(layoutId)
+            }
+
+            ApiLayoutHolesScreen(
+                layoutName = layout?.name ?: "Layout",
+                holes = apiLayoutHoles,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("api_players") {
+            LaunchedEffect(Unit) {
+                onLoadApiUserPlayers()
+            }
+
+            ApiPlayersScreen(
+                data = apiUserPlayers,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -1272,6 +1372,7 @@ fun StartScreen(
     onSettingsClick: () -> Unit,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
+    onServerPlayersClick: () -> Unit,
     loggedInUsername: String?
 ) {
     val isLoggedIn = !loggedInUsername.isNullOrBlank()
@@ -1307,6 +1408,13 @@ fun StartScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Spelare")
+                }
+
+                Button(
+                    onClick = onServerPlayersClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Serverspelare")
                 }
 
                 Button(
@@ -2056,11 +2164,6 @@ fun ResumeRoundScreen(
         }
     }
 }
-
-
-
-
-
 
 
 fun formatDateTime(timestamp: Long): String {

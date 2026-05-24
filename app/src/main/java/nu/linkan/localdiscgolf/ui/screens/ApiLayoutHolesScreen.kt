@@ -1,6 +1,5 @@
 package nu.linkan.localdiscgolf.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,20 +20,19 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import nu.linkan.localdiscgolf.network.LayoutApiResponse
+import nu.linkan.localdiscgolf.network.LayoutHoleApiResponse
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ApiCourseLayoutsScreen(
-    courseName: String,
-    layouts: List<LayoutApiResponse>,
-    onBack: () -> Unit,
-    onLayoutClick: (Long) -> Unit
+fun ApiLayoutHolesScreen(
+    layoutName: String,
+    holes: List<LayoutHoleApiResponse>,
+    onBack: () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(courseName) },
+                title = { Text(layoutName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -46,14 +44,14 @@ fun ApiCourseLayoutsScreen(
             )
         }
     ) { innerPadding ->
-        if (layouts.isEmpty()) {
+        if (holes.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(16.dp)
             ) {
-                Text("Inga layouter hittades.")
+                Text("Inga hål hittades för layouten.")
             }
         } else {
             LazyColumn(
@@ -63,29 +61,36 @@ fun ApiCourseLayoutsScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(layouts) { layout ->
+                items(holes) { hole ->
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onLayoutClick(layout.id) }
                             .padding(vertical = 8.dp)
                     ) {
+                        val title = buildString {
+                            append("Hål ${hole.hole_number}")
+                            if (!hole.hole_name.isNullOrBlank()) {
+                                append(" - ${hole.hole_name}")
+                            }
+                        }
+
                         Text(
-                            text = layout.name,
+                            text = title,
                             style = MaterialTheme.typography.titleMedium
                         )
 
+                        val teeText = hole.tee_name ?: "-"
+                        val basketText = hole.basket_name ?: "-"
+
                         Text(
-                            text = "${layout.hole_count} hål • par ${layout.total_par} • ${layout.total_length_meters} m",
+                            text = "$teeText → $basketText",
                             style = MaterialTheme.typography.bodyMedium
                         )
 
-                        if (!layout.description.isNullOrBlank()) {
-                            Text(
-                                text = layout.description,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+                        Text(
+                            text = "${hole.length_meters} m • par ${hole.par_value}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                     HorizontalDivider()
                 }

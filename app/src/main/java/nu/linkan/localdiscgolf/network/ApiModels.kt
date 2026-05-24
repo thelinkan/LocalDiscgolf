@@ -41,3 +41,48 @@ data class LayoutApiResponse(
     val total_par: Int,
     val total_length_meters: Int
 )
+
+data class LayoutHoleApiResponse(
+    val sequence_number: Int,
+    val hole_id: Long,
+    val hole_number: Int,
+    val hole_name: String?,
+    val hole_variant_id: Long?,
+    val tee_name: String?,
+    val basket_name: String?,
+    val length_meters: Int,
+    val par_value: Int
+)
+
+data class UserApiResponse(
+    val id: Long,
+    val username: String,
+    val role: String,
+    val is_active: Int
+)
+
+data class PlayerApiResponse(
+    val id: Long,
+    val name: String,
+    val owner_user_id: Long?,
+    val created_by_user_id: Long?,
+    val is_guest: Int,
+    val is_active: Int
+)
+
+data class ScoreablePlayerApiResponse(
+    val id: Long,
+    val name: String,
+    val owner_user_id: Long?,
+    val created_by_user_id: Long?,
+    val is_guest: Int,
+    val is_active: Int,
+    val permission_level: String
+)
+
+data class UserPlayersResponse(
+    val user: UserApiResponse,
+    val own_player: PlayerApiResponse?,
+    val guest_players: List<PlayerApiResponse>,
+    val scoreable_players: List<ScoreablePlayerApiResponse>
+)

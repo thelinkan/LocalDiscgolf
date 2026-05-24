@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from sqlalchemy import text
 from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
+from app.auth import create_access_token, get_current_user, require_admin
 
 import bcrypt
 app = FastAPI(title="LocalDiscgolf API")
@@ -15,6 +16,14 @@ app = FastAPI(title="LocalDiscgolf API")
 # Pydantic-modeller
 # =========================
 
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    username: str
+    role: str
+    must_change_password: bool
+    
 class RoundPlayerCreate(BaseModel):
     player_id: int
     layout_id: int
@@ -51,6 +60,17 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
 
+class CreateRoundRequest(BaseModel):
+    course_id: int
+    started_at: datetime
+    players: list[RoundPlayerCreate]
+
+class UpdateHoleRequest(BaseModel):
+    scores: list[HoleScoreUpdate]
+ 
+class CompleteRoundRequest(BaseModel):
+    ended_at: datetime
+    
 # =========================
 # Hjälpfunktioner
 # =========================
@@ -486,6 +506,10 @@ def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
     """
     return fetch_all(sql, {"layout_id": layout_id})    
 
+@app.get("/me")
+def get_me(current_user: dict = Depends(get_current_user)) -> dict:
+    return current_user
+
 @app.get("/players")
 def get_players() -> list[dict]:
     sql = """
@@ -503,28 +527,112 @@ def get_players() -> list[dict]:
     return fetch_all(sql)
 
 
-@app.get("/rounds")
-def get_rounds() -> list[dict]:
-    sql = """
-        SELECT
-            ps.id,
-            c.name AS course_name,
-            u.username AS created_by_username,
-            ps.started_at,
-            ps.ended_at,
-            ps.status,
-            (
-                SELECT COUNT(*)
-                FROM session_player sp
-                WHERE sp.play_session_id = ps.id
-            ) AS player_count
-        FROM play_session ps
-        INNER JOIN course c ON c.id = ps.course_id
-        INNER JOIN user_account u ON u.id = ps.created_by_user_id
-        ORDER BY ps.started_at DESC, ps.id DESC
-    """
-    return fetch_all(sql)
+@app.post("/rounds")
+def create_round(
+    request: CreateRoundRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    get_course(request.course_id)
 
+    if not request.players:
+        raise HTTPException(status_code=400, detail="Round must contain at least one player")
+
+    def _create_round_tx(conn):
+        play_session_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO play_session (
+                course_id, created_by_user_id, started_at, ended_at, status
+            )
+            VALUES (
+                :course_id, :created_by_user_id, :started_at, NULL, 'in_progress'
+            )
+            """,
+            {
+                "course_id": request.course_id,
+                "created_by_user_id": current_user["id"],
+                "started_at": request.started_at,
+            },
+        )
+
+        seen_player_ids = set()
+
+        for idx, round_player in enumerate(request.players, start=1):
+            if round_player.player_id in seen_player_ids:
+                raise HTTPException(status_code=400, detail="Duplicate player in round")
+            seen_player_ids.add(round_player.player_id)
+
+            player = get_player(round_player.player_id)
+            layout = get_layout(round_player.layout_id, request.course_id)
+            layout_holes = get_layout_holes(round_player.layout_id)
+
+            approval_required, approval_state, approved_by_user_id = determine_approval(
+                source_user_id=current_user["id"],
+                player=player,
+            )
+
+            session_player_id = tx_execute_write(
+                conn,
+                """
+                INSERT INTO session_player (
+                    play_session_id, player_id, layout_id, display_name_snapshot,
+                    start_order, added_by_user_id, approval_required, approval_state,
+                    approved_by_user_id, approved_at
+                )
+                VALUES (
+                    :play_session_id, :player_id, :layout_id, :display_name_snapshot,
+                    :start_order, :added_by_user_id, :approval_required, :approval_state,
+                    :approved_by_user_id, :approved_at
+                )
+                """,
+                {
+                    "play_session_id": play_session_id,
+                    "player_id": player["id"],
+                    "layout_id": layout["id"],
+                    "display_name_snapshot": player["name"],
+                    "start_order": idx,
+                    "added_by_user_id": current_user["id"],
+                    "approval_required": approval_required,
+                    "approval_state": approval_state,
+                    "approved_by_user_id": approved_by_user_id,
+                    "approved_at": request.started_at if approval_state == "approved" else None,
+                },
+            )
+
+            for hole in layout_holes:
+                tx_execute_write(
+                    conn,
+                    """
+                    INSERT INTO session_player_hole (
+                        session_player_id, sequence_number, course_id, hole_id, hole_variant_id,
+                        hole_number_snapshot, hole_name_snapshot, tee_name_snapshot, basket_name_snapshot,
+                        length_snapshot_meters, par_snapshot, throws_count, is_completed
+                    )
+                    VALUES (
+                        :session_player_id, :sequence_number, :course_id, :hole_id, :hole_variant_id,
+                        :hole_number_snapshot, :hole_name_snapshot, :tee_name_snapshot, :basket_name_snapshot,
+                        :length_snapshot_meters, :par_snapshot, NULL, 0
+                    )
+                    """,
+                    {
+                        "session_player_id": session_player_id,
+                        "sequence_number": hole["sequence_number"],
+                        "course_id": request.course_id,
+                        "hole_id": hole["hole_id"],
+                        "hole_variant_id": hole["hole_variant_id"],
+                        "hole_number_snapshot": hole["hole_number"],
+                        "hole_name_snapshot": hole["hole_name"],
+                        "tee_name_snapshot": hole["tee_name"],
+                        "basket_name_snapshot": hole["basket_name"],
+                        "length_snapshot_meters": hole["length_meters"],
+                        "par_snapshot": hole["par_value"],
+                    },
+                )
+
+        return play_session_id
+
+    play_session_id = run_in_transaction(_create_round_tx)
+    return get_round_endpoint(int(play_session_id))
 
 @app.get("/rounds/{round_id}")
 def get_round_endpoint(round_id: int) -> dict:
@@ -723,7 +831,10 @@ def get_current_round_state(round_id: int) -> dict:
     }
 
 @app.get("/users/{username}/players")
-def get_user_players(username: str) -> dict:
+def get_user_players(username: str, current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["username"] != username and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed to view this user's players")
+
     user = fetch_one(
         """
         SELECT id, username, role, is_active
@@ -833,20 +944,27 @@ def change_password(request: ChangePasswordRequest) -> dict:
         "must_change_password": False,
     }
 
-@app.post("/login")
-def login(request: LoginRequest) -> dict:
+@app.post("/login", response_model=LoginResponse)
+def login(request: LoginRequest) -> LoginResponse:
     user = get_user_with_password(request.username)
 
     if not verify_password(request.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    return {
-        "user_id": user["id"],
-        "username": user["username"],
-        "role": user["role"],
-        "must_change_password": bool(user["must_change_password"]),
-    }
+    token = create_access_token(
+        user_id=user["id"],
+        username=user["username"],
+        role=user["role"],
+    )
 
+    return LoginResponse(
+        access_token=token,
+        user_id=user["id"],
+        username=user["username"],
+        role=user["role"],
+        must_change_password=bool(user["must_change_password"]),
+    )
+    
 @app.post("/rounds")
 def create_round(request: CreateRoundRequest) -> dict:
     created_by = get_user_by_username(request.created_by_username)
@@ -954,13 +1072,16 @@ def create_round(request: CreateRoundRequest) -> dict:
 
 
 @app.patch("/rounds/{round_id}/holes/{sequence_number}")
-def update_round_hole(round_id: int, sequence_number: int, request: UpdateHoleRequest) -> dict:
+def update_round_hole(
+    round_id: int,
+    sequence_number: int,
+    request: UpdateHoleRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     rnd = get_round(round_id)
 
     if rnd["status"] != "in_progress":
         raise HTTPException(status_code=400, detail="Only in-progress rounds can be updated")
-
-    updated_by = get_user_by_username(request.updated_by_username)
 
     if not request.scores:
         raise HTTPException(status_code=400, detail="No scores provided")
@@ -974,11 +1095,9 @@ def update_round_hole(round_id: int, sequence_number: int, request: UpdateHoleRe
             )
 
         player = get_player(score_update.player_id)
+        determine_approval(source_user_id=current_user["id"], player=player)
 
-        # Samma behörighetsregel som vid skapande
-        determine_approval(source_user_id=updated_by["id"], player=player)
-
-        updated_rows = execute_write(
+        execute_write(
             """
             UPDATE session_player_hole
             SET
@@ -997,18 +1116,18 @@ def update_round_hole(round_id: int, sequence_number: int, request: UpdateHoleRe
 
     return get_round_endpoint(round_id)
 
-
 @app.post("/rounds/{round_id}/complete")
-def complete_round(round_id: int, request: CompleteRoundRequest) -> dict:
+def complete_round(
+    round_id: int,
+    request: CompleteRoundRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     rnd = get_round(round_id)
 
     if rnd["status"] != "in_progress":
         raise HTTPException(status_code=400, detail="Round is not in progress")
 
-    completed_by = get_user_by_username(request.completed_by_username)
-
-    # Enkelt första steg: samma användare som skapade rundan får avsluta den
-    if completed_by["id"] != rnd["created_by_user_id"]:
+    if current_user["id"] != rnd["created_by_user_id"]:
         raise HTTPException(status_code=403, detail="Only the creator can complete the round")
 
     execute_write(
@@ -1026,3 +1145,4 @@ def complete_round(round_id: int, request: CompleteRoundRequest) -> dict:
     )
 
     return get_round_endpoint(round_id)
+    

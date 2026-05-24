@@ -21,3 +21,11 @@ data class MeResponse(
     val is_active: Int,
     val must_change_password: Int
 )
+
+data class CourseApiResponse(
+    val id: Long,
+    val name: String,
+    val is_active: Int,
+    val hole_count: Int,
+    val layout_count: Int
+)

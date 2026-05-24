@@ -109,6 +109,8 @@ import nu.linkan.localdiscgolf.ui.components.HoleRow
 import nu.linkan.localdiscgolf.ui.screens.RoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
 import nu.linkan.localdiscgolf.ui.screens.ScoreBadge
+import nu.linkan.localdiscgolf.ui.screens.ApiCoursesScreen
+import nu.linkan.localdiscgolf.network.CourseApiResponse
 
 import android.content.Context
 import android.widget.Toast
@@ -144,6 +146,8 @@ class MainActivity : ComponentActivity() {
                 var apiPort by remember { mutableStateOf(prefs.getString("port", "8000") ?: "8000") }
                 var authToken by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
                 var loggedInUsername by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
+
+                var apiCourses by remember { mutableStateOf<List<CourseApiResponse>>(emptyList()) }
 
                 val navController = rememberNavController()
 
@@ -222,7 +226,43 @@ class MainActivity : ComponentActivity() {
                     onLoggedInUsernameChange = { loggedInUsername = it },
                     prefs = prefs,
                     activity = this,
+                    apiCourses = apiCourses,
+                    onLoadApiCourses = {
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getCourses(baseUrl, authToken)
+                                }
 
+                                result.fold(
+                                    onSuccess = { courses ->
+                                        apiCourses = courses
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta serverbanor: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    onLogout = {
+                        prefs.edit()
+                            .remove("token")
+                            .remove("username")
+                            .apply()
+
+                        authToken = ""
+                        loggedInUsername = ""
+
+                        Toast.makeText(this, "Utloggad", Toast.LENGTH_SHORT).show()
+                    },
                     onAddPlayer = { name ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -632,12 +672,15 @@ fun AppNavHost(
     apiPort: String,
     authToken: String,
     loggedInUsername: String,
+    onLogout: () -> Unit,
     onApiHostChange: (String) -> Unit,
     onApiPortChange: (String) -> Unit,
     onAuthTokenChange: (String) -> Unit,
     onLoggedInUsernameChange: (String) -> Unit,
     prefs: android.content.SharedPreferences,
     activity: ComponentActivity,
+    apiCourses: List<CourseApiResponse>,
+    onLoadApiCourses: () -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -648,10 +691,13 @@ fun AppNavHost(
             StartScreen(
                 onPlayersClick = { navController.navigate("players") },
                 onCoursesClick = { navController.navigate("courses") },
+                onServerCoursesClick = { navController.navigate("api_courses") },
                 onNewRoundClick = { navController.navigate("new_round") },
                 onResumeRoundClick = { navController.navigate("resume_round") },
                 onSettingsClick = { navController.navigate("settings") },
-                onLoginClick = { navController.navigate("login") }
+                onLoginClick = { navController.navigate("login") },
+                onLogoutClick = onLogout,
+                loggedInUsername = loggedInUsername.ifBlank { null }
             )
         }
 
@@ -696,6 +742,10 @@ fun AppNavHost(
 
                                 meResult.fold(
                                     onSuccess = {
+                                        val coursesResult = withContext(Dispatchers.IO) {
+                                            ApiClient.getCourses(baseUrl, loginResponse.access_token)
+                                        }
+
                                         prefs.edit()
                                             .putString("token", loginResponse.access_token)
                                             .putString("username", loginResponse.username)
@@ -704,10 +754,13 @@ fun AppNavHost(
                                         onAuthTokenChange(loginResponse.access_token)
                                         onLoggedInUsernameChange(loginResponse.username)
 
-                                        val message = if (loginResponse.must_change_password) {
-                                            "Inloggad. Lösenordsbyte krävs."
-                                        } else {
-                                            "Inloggad som ${loginResponse.username}"
+                                        val message = when {
+                                            loginResponse.must_change_password ->
+                                                "Inloggad. Lösenordsbyte krävs."
+                                            coursesResult.isSuccess ->
+                                                "Inloggad som ${loginResponse.username}. Banor hämtade."
+                                            else ->
+                                                "Inloggad som ${loginResponse.username}, men kunde inte hämta banor."
                                         }
 
                                         Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
@@ -754,6 +807,17 @@ fun AppNavHost(
                 onCourseClick = { courseId ->
                     navController.navigate("course/$courseId")
                 }
+            )
+        }
+
+        composable("api_courses") {
+            LaunchedEffect(Unit) {
+                onLoadApiCourses()
+            }
+
+            ApiCoursesScreen(
+                courses = apiCourses,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -1148,11 +1212,16 @@ fun AppNavHost(
 fun StartScreen(
     onPlayersClick: () -> Unit,
     onCoursesClick: () -> Unit,
+    onServerCoursesClick: () -> Unit,
     onNewRoundClick: () -> Unit,
     onResumeRoundClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onLoginClick: () -> Unit
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit,
+    loggedInUsername: String?
 ) {
+    val isLoggedIn = !loggedInUsername.isNullOrBlank()
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("LocalDiscgolf") })
@@ -1162,49 +1231,86 @@ fun StartScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(16.dp)
         ) {
-            Button(
-                onClick = onPlayersClick,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Spelare")
+                if (isLoggedIn) {
+                    Text(
+                        text = "Inloggad som $loggedInUsername",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                } else {
+                    Text(
+                        text = "Inte inloggad",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                Button(
+                    onClick = onPlayersClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Spelare")
+                }
+
+                Button(
+                    onClick = onCoursesClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Banor")
+                }
+
+                Button(
+                    onClick = onServerCoursesClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Serverbanor")
+                }
+
+                Button(
+                    onClick = onNewRoundClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ny runda")
+                }
+
+                Button(
+                    onClick = onResumeRoundClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Återuppta runda")
+                }
             }
 
-            Button(
-                onClick = onCoursesClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Banor")
-            }
+            Spacer(modifier = Modifier.weight(1f))
 
-            Button(
-                onClick = onNewRoundClick,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Ny runda")
-            }
+                OutlinedButton(
+                    onClick = onSettingsClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Inställningar")
+                }
 
-            Button(
-                onClick = onResumeRoundClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Återuppta runda")
-            }
-
-            Button(
-                onClick = onSettingsClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Inställningar")
-            }
-
-            Button(
-                onClick = onLoginClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Logga in")
+                if (isLoggedIn) {
+                    OutlinedButton(
+                        onClick = onLogoutClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Logga ut")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onLoginClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Logga in")
+                    }
+                }
             }
         }
     }

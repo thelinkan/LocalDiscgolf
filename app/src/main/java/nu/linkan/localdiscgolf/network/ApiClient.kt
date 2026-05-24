@@ -61,4 +61,33 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getCourses(baseUrl: String, token: String): Result<List<CourseApiResponse>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/courses")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /courses responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(Exception("Get /courses failed: ${response.code} $responseBody"))
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, CourseApiResponse::class.java)
+                    .type
+
+                val parsed: List<CourseApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

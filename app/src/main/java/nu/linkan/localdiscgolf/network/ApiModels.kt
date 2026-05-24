@@ -161,3 +161,81 @@ data class CreateRoundApiRequest(
     val started_at: String,
     val players: List<CreateRoundPlayerApiRequest>
 )
+
+data class CurrentRoundApiResponse(
+    val round: CurrentRoundInfoApiResponse,
+    val progress: CurrentRoundProgressApiResponse,
+    val players: List<CurrentRoundPlayerApiResponse>,
+    val summary_to_previous_hole: List<CurrentRoundSummaryApiResponse>,
+    val current_hole: CurrentRoundHoleApiResponse
+)
+
+data class CurrentRoundInfoApiResponse(
+    val id: Long,
+    val course_id: Long,
+    val course_name: String,
+    val created_by_user_id: Long,
+    val created_by_username: String,
+    val started_at: String,
+    val ended_at: String?,
+    val status: String
+)
+
+data class CurrentRoundProgressApiResponse(
+    val total_holes: Int,
+    val completed_holes: Int,
+    val current_sequence_number: Int,
+    val is_finished_by_scores: Boolean
+)
+
+data class CurrentRoundPlayerApiResponse(
+    val session_player_id: Long,
+    val player_id: Long,
+    val player_name: String,
+    val layout_id: Long?,
+    val layout_name: String?,
+    val start_order: Int,
+    val approval_required: Int,
+    val approval_state: String
+)
+
+data class CurrentRoundSummaryApiResponse(
+    val session_player_id: Long,
+    val player_id: Long,
+    val player_name: String,
+    val start_order: Int,
+    val total_throws: Int,
+    val relative_to_par: Int,
+    val played_holes: Int
+)
+
+data class CurrentRoundHoleApiResponse(
+    val sequence_number: Int,
+    val hole_id: Long,
+    val hole_variant_id: Long?,
+    val hole_number: Int,
+    val hole_name: String?,
+    val tee_name: String?,
+    val basket_name: String?,
+    val length_meters: Int,
+    val par_value: Int,
+    val scores: List<CurrentRoundHoleScoreApiResponse>
+)
+
+data class CurrentRoundHoleScoreApiResponse(
+    val session_player_id: Long,
+    val player_id: Long,
+    val player_name: String,
+    val start_order: Int,
+    val throws_count: Int?,
+    val is_completed: Boolean
+)
+
+data class UpdateHoleScoreApiRequest(
+    val player_id: Long,
+    val throws_count: Int?
+)
+
+data class UpdateHoleApiRequest(
+    val scores: List<UpdateHoleScoreApiRequest>
+)

@@ -284,4 +284,70 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getCurrentRound(
+        baseUrl: String,
+        token: String,
+        roundId: Long
+    ): Result<CurrentRoundApiResponse> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/rounds/$roundId/current")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /rounds/$roundId/current responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /rounds/$roundId/current failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(responseBody, CurrentRoundApiResponse::class.java)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun updateRoundHole(
+        baseUrl: String,
+        token: String,
+        roundId: Long,
+        sequenceNumber: Int,
+        requestBody: UpdateHoleApiRequest
+    ): Result<RoundDetailApiResponse> {
+        return try {
+            val bodyJson = gson.toJson(requestBody)
+
+            val request = Request.Builder()
+                .url("$baseUrl/rounds/$roundId/holes/$sequenceNumber")
+                .header("Authorization", "Bearer $token")
+                .patch(bodyJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("PATCH /rounds/$roundId/holes/$sequenceNumber responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Update hole failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(responseBody, RoundDetailApiResponse::class.java)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

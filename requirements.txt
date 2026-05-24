@@ -5,3 +5,4 @@ uvicorn
 sqlalchemy
 pymysql
 python-dotenv
+PyJWT

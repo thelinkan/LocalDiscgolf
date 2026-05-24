@@ -244,15 +244,28 @@ def get_permission_level(source_user_id: int, target_player_id: int) -> str:
 
 
 def determine_approval(source_user_id: int, player: dict) -> tuple[bool, str, int | None]:
-    if player["is_guest"]:
-        if player["created_by_user_id"] == source_user_id:
+    print("DEBUG determine_approval:", source_user_id, type(source_user_id), player)
+    source_user_id = int(source_user_id)
+
+    owner_user_id = player.get("owner_user_id")
+    created_by_user_id = player.get("created_by_user_id")
+    is_guest = bool(player.get("is_guest"))
+
+    if owner_user_id is not None:
+        owner_user_id = int(owner_user_id)
+
+    if created_by_user_id is not None:
+        created_by_user_id = int(created_by_user_id)
+
+    if is_guest:
+        if created_by_user_id == source_user_id:
             return False, "approved", source_user_id
         raise HTTPException(
             status_code=403,
             detail=f"Guest player {player['name']} can only be used by the creator",
         )
 
-    if player["owner_user_id"] == source_user_id:
+    if owner_user_id == source_user_id:
         return False, "approved", source_user_id
 
     permission_level = get_permission_level(source_user_id, player["id"])
@@ -267,7 +280,6 @@ def determine_approval(source_user_id: int, player: dict) -> tuple[bool, str, in
         status_code=403,
         detail=f"User is not allowed to score for player {player['name']}",
     )
-
 
 def get_round(round_id: int) -> dict:
     rnd = fetch_one(

@@ -348,6 +348,15 @@ def get_user_with_password(username: str) -> dict:
         raise HTTPException(status_code=400, detail="User is inactive")
     return user
 
+def can_access_player(current_user: dict, player: dict) -> bool:
+    if bool(player["is_guest"]):
+        return player["created_by_user_id"] == current_user["id"]
+
+    if player["owner_user_id"] == current_user["id"]:
+        return True
+
+    permission_level = get_permission_level(current_user["id"], player["id"])
+    return permission_level in ("auto_approve", "propose")
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(
@@ -919,6 +928,48 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
         "scoreable_players": scoreable_players,
     }
     
+@app.get("/players/{player_id}/rounds")
+def get_player_rounds(
+    player_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    player = get_player(player_id)
+
+    if not can_access_player(current_user, player):
+        raise HTTPException(status_code=403, detail="Not allowed to view this player's rounds")
+
+    sql = """
+        SELECT
+            ps.id,
+            c.name AS course_name,
+            l.name AS layout_name,
+            ps.started_at,
+            ps.ended_at,
+            ps.status,
+            sp.approval_required,
+            sp.approval_state,
+            SUM(CASE WHEN sph.throws_count IS NOT NULL THEN sph.throws_count ELSE 0 END) AS total_throws,
+            SUM(CASE WHEN sph.throws_count IS NOT NULL THEN sph.par_snapshot ELSE 0 END) AS total_par,
+            SUM(CASE WHEN sph.throws_count IS NOT NULL THEN 1 ELSE 0 END) AS played_holes,
+            COUNT(*) AS layout_hole_count
+        FROM session_player sp
+        INNER JOIN play_session ps ON ps.id = sp.play_session_id
+        INNER JOIN course c ON c.id = ps.course_id
+        LEFT JOIN layout l ON l.id = sp.layout_id
+        LEFT JOIN session_player_hole sph ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+        GROUP BY
+            ps.id,
+            c.name,
+            l.name,
+            ps.started_at,
+            ps.ended_at,
+            ps.status,
+            sp.approval_required,
+            sp.approval_state
+        ORDER BY ps.started_at DESC, ps.id DESC
+    """
+    return fetch_all(sql, {"player_id": player_id})    
     
 # =========================
 # Nya skriv-endpoints

@@ -115,11 +115,13 @@ import nu.linkan.localdiscgolf.ui.screens.ApiLayoutHolesScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiPlayersScreen
 import nu.linkan.localdiscgolf.ui.screens.LoginScreen
 import nu.linkan.localdiscgolf.ui.screens.SettingsScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiPlayerRoundsScreen
 
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
 import nu.linkan.localdiscgolf.network.LayoutHoleApiResponse
 import nu.linkan.localdiscgolf.network.UserPlayersResponse
+import nu.linkan.localdiscgolf.network.PlayerRoundApiResponse
 
 
 import android.content.Context
@@ -159,6 +161,8 @@ class MainActivity : ComponentActivity() {
                 var apiLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
                 var apiLayoutHoles by remember { mutableStateOf<List<LayoutHoleApiResponse>>(emptyList()) }
                 var apiUserPlayers by remember { mutableStateOf<UserPlayersResponse?>(null) }
+                var apiPlayerRounds by remember { mutableStateOf<List<PlayerRoundApiResponse>>(emptyList()) }
+                var selectedApiPlayerName by remember { mutableStateOf("") }
 
                 val navController = rememberNavController()
 
@@ -527,6 +531,34 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    apiPlayerRounds = apiPlayerRounds,
+                    selectedApiPlayerName = selectedApiPlayerName,
+                    onLoadApiPlayerRounds = { playerId, playerName ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getPlayerRounds(baseUrl, authToken, playerId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { rounds ->
+                                        selectedApiPlayerName = playerName
+                                        apiPlayerRounds = rounds
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta spelarens rundor: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
                     onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId, onCreated ->
                         lifecycleScope.launch {
                             val now = System.currentTimeMillis()
@@ -777,6 +809,9 @@ fun AppNavHost(
     onLoadApiLayoutHoles: (Long) -> Unit,
     apiUserPlayers: UserPlayersResponse?,
     onLoadApiUserPlayers: () -> Unit,
+    apiPlayerRounds: List<PlayerRoundApiResponse>,
+    selectedApiPlayerName: String,
+    onLoadApiPlayerRounds: (Long, String) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -896,6 +931,14 @@ fun AppNavHost(
             )
         }
 
+        composable("api_player_rounds") {
+            ApiPlayerRoundsScreen(
+                playerName = selectedApiPlayerName,
+                rounds = apiPlayerRounds,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable("courses") {
             CoursesScreen(
                 courseRows = courseListRows,
@@ -971,7 +1014,17 @@ fun AppNavHost(
 
             ApiPlayersScreen(
                 data = apiUserPlayers,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onPlayerClick = { playerId ->
+                    val playerName =
+                        apiUserPlayers?.own_player?.takeIf { it.id == playerId }?.name
+                            ?: apiUserPlayers?.guest_players?.firstOrNull { it.id == playerId }?.name
+                            ?: apiUserPlayers?.scoreable_players?.firstOrNull { it.id == playerId }?.name
+                            ?: "Spelare"
+
+                    onLoadApiPlayerRounds(playerId, playerName)
+                    navController.navigate("api_player_rounds")
+                }
             )
         }
 

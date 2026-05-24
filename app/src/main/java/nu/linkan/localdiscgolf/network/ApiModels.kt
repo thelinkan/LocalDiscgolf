@@ -86,3 +86,19 @@ data class UserPlayersResponse(
     val guest_players: List<PlayerApiResponse>,
     val scoreable_players: List<ScoreablePlayerApiResponse>
 )
+
+data class PlayerRoundApiResponse(
+    val id: Long,
+    val course_name: String,
+    val layout_name: String?,
+    val started_at: String,
+    val ended_at: String?,
+    val status: String,
+    val approval_required: Int,
+    val approval_state: String,
+    val total_throws: Int,
+    val total_par: Int,
+    val played_holes: Int,
+    val layout_hole_count: Int
+)
+

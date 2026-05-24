@@ -185,4 +185,39 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getPlayerRounds(
+        baseUrl: String,
+        token: String,
+        playerId: Long
+    ): Result<List<PlayerRoundApiResponse>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/players/$playerId/rounds")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /players/$playerId/rounds responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /players/$playerId/rounds failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, PlayerRoundApiResponse::class.java)
+                    .type
+
+                val parsed: List<PlayerRoundApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

@@ -239,3 +239,16 @@ data class UpdateHoleScoreApiRequest(
 data class UpdateHoleApiRequest(
     val scores: List<UpdateHoleScoreApiRequest>
 )
+
+data class CompleteRoundApiRequest(
+    val ended_at: String
+)
+
+data class InProgressServerRoundApiResponse(
+    val id: Long,
+    val course_name: String,
+    val layout_name: String?,
+    val started_at: String,
+    val status: String,
+    val player_count: Int
+)

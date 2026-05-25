@@ -119,6 +119,7 @@ import nu.linkan.localdiscgolf.ui.screens.ApiPlayerRoundsScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiRoundDetailScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiNewRoundScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiRoundHoleScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiResumeRoundScreen
 
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
@@ -133,6 +134,8 @@ import nu.linkan.localdiscgolf.network.UpdateHoleApiRequest
 import nu.linkan.localdiscgolf.network.UpdateHoleScoreApiRequest
 import nu.linkan.localdiscgolf.network.ApiHttpException
 import nu.linkan.localdiscgolf.network.MeResponse
+import nu.linkan.localdiscgolf.network.CompleteRoundApiRequest
+import nu.linkan.localdiscgolf.network.InProgressServerRoundApiResponse
 
 import android.content.Context
 import android.widget.Toast
@@ -177,6 +180,9 @@ class MainActivity : ComponentActivity() {
                 var apiRoundDetail by remember { mutableStateOf<RoundDetailApiResponse?>(null) }
                 var apiNewRoundLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
                 var apiCurrentRound by remember { mutableStateOf<CurrentRoundApiResponse?>(null) }
+                var apiInProgressRounds by remember {
+                    mutableStateOf<List<InProgressServerRoundApiResponse>>(emptyList())
+                }
 
                 val navController = rememberNavController()
 
@@ -596,6 +602,117 @@ class MainActivity : ComponentActivity() {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte spara hålet: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    onCompleteApiRound = { roundId, onCompleted ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val request = CompleteRoundApiRequest(
+                                    ended_at = java.time.OffsetDateTime.now().toString()
+                                )
+
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.completeRound(
+                                        baseUrl = baseUrl,
+                                        token = authToken,
+                                        roundId = roundId,
+                                        requestBody = request
+                                    )
+                                }
+
+                                result.fold(
+                                    onSuccess = { completedRound ->
+                                        apiRoundDetail = completedRound
+
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Rundan avslutad",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+
+                                        onCompleted()
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte avsluta rundan: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    apiInProgressRounds = apiInProgressRounds,
+
+                    onLoadApiInProgressRounds = {
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getMyInProgressRounds(baseUrl, authToken)
+                                }
+
+                                result.fold(
+                                    onSuccess = { rounds ->
+                                        apiInProgressRounds = rounds
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta pågående rundor: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+
+                    onResumeApiRound = { roundId, onResolved ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val result = withContext(Dispatchers.IO) {
+                                    ApiClient.getCurrentRound(baseUrl, authToken, roundId)
+                                }
+
+                                result.fold(
+                                    onSuccess = { currentRound ->
+                                        apiCurrentRound = currentRound
+                                        onResolved(currentRound.progress.current_sequence_number)
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte återuppta rundan: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -1066,6 +1183,10 @@ fun AppNavHost(
     apiCurrentRound: CurrentRoundApiResponse?,
     onLoadApiRoundHole: (Long, Int) -> Unit,
     onSaveApiHole: (Long, Int, List<Pair<Long, Int?>>, () -> Unit) -> Unit,
+    onCompleteApiRound: (Long, () -> Unit) -> Unit,
+    apiInProgressRounds: List<InProgressServerRoundApiResponse>,
+    onLoadApiInProgressRounds: () -> Unit,
+    onResumeApiRound: (Long, (Int) -> Unit) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -1081,6 +1202,7 @@ fun AppNavHost(
                 onNewRoundClick = { navController.navigate("new_round") },
                 onNewServerRoundClick = { navController.navigate("api_new_round") },
                 onResumeRoundClick = { navController.navigate("resume_round") },
+                onResumeServerRoundClick = { navController.navigate("api_resume_round") },
                 onSettingsClick = { navController.navigate("settings") },
                 onLoginClick = { navController.navigate("login") },
                 onLogoutClick = onLogout,
@@ -1258,11 +1380,13 @@ fun AppNavHost(
 
                 onFinishRound = { values ->
                     onSaveApiHole(roundId, sequenceNumber, values) {
-                        Toast.makeText(
-                            activity,
-                            "Avsluta runda kopplas in i nästa steg",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        onCompleteApiRound(roundId) {
+                            navController.navigate("api_round_detail") {
+                                popUpTo("api_round_hole/$roundId/$sequenceNumber") {
+                                    inclusive = true
+                                }
+                            }
+                        }
                     }
                 }
             )
@@ -1285,6 +1409,22 @@ fun AppNavHost(
                 onCreateRound = { courseId, layoutId, playerIds ->
                     onCreateApiRound(courseId, layoutId, playerIds) { roundId ->
                         navController.navigate("api_round_hole/$roundId/1")
+                    }
+                }
+            )
+        }
+
+        composable("api_resume_round") {
+            LaunchedEffect(Unit) {
+                onLoadApiInProgressRounds()
+            }
+
+            ApiResumeRoundScreen(
+                rounds = apiInProgressRounds,
+                onBack = { navController.popBackStack() },
+                onResume = { roundId ->
+                    onResumeApiRound(roundId) { sequenceNumber ->
+                        navController.navigate("api_round_hole/$roundId/$sequenceNumber")
                     }
                 }
             )
@@ -1778,6 +1918,7 @@ fun StartScreen(
     onLogoutClick: () -> Unit,
     onServerPlayersClick: () -> Unit,
     onNewServerRoundClick: () -> Unit,
+    onResumeServerRoundClick: () -> Unit,
     loggedInUsername: String?
 ) {
     val isLoggedIn = !loggedInUsername.isNullOrBlank()
@@ -1855,6 +1996,13 @@ fun StartScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Återuppta runda")
+                }
+
+                Button(
+                    onClick = onResumeServerRoundClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Återuppta serverrunda")
                 }
             }
 

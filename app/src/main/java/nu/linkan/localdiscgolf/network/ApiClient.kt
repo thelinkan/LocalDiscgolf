@@ -399,4 +399,78 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun completeRound(
+        baseUrl: String,
+        token: String,
+        roundId: Long,
+        requestBody: CompleteRoundApiRequest
+    ): Result<RoundDetailApiResponse> {
+        return try {
+            val bodyJson = gson.toJson(requestBody)
+
+            val request = Request.Builder()
+                .url("$baseUrl/rounds/$roundId/complete")
+                .header("Authorization", "Bearer $token")
+                .post(bodyJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("POST /rounds/$roundId/complete responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Complete round failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(
+                    responseBody,
+                    RoundDetailApiResponse::class.java
+                )
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getMyInProgressRounds(
+        baseUrl: String,
+        token: String
+    ): Result<List<InProgressServerRoundApiResponse>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/me/in-progress-rounds")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /me/in-progress-rounds responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get in-progress rounds failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, InProgressServerRoundApiResponse::class.java)
+                    .type
+
+                val parsed: List<InProgressServerRoundApiResponse> =
+                    gson.fromJson(responseBody, listType)
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

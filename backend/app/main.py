@@ -650,6 +650,36 @@ def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
 def get_me(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
+@app.get("/me/in-progress-rounds")
+def get_my_in_progress_rounds(
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    sql = """
+        SELECT
+            ps.id,
+            c.name AS course_name,
+            ps.started_at,
+            ps.status,
+            (
+                SELECT GROUP_CONCAT(DISTINCT l.name ORDER BY l.name SEPARATOR ', ')
+                FROM session_player sp2
+                INNER JOIN layout l ON l.id = sp2.layout_id
+                WHERE sp2.play_session_id = ps.id
+            ) AS layout_name,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp3
+                WHERE sp3.play_session_id = ps.id
+            ) AS player_count
+        FROM play_session ps
+        INNER JOIN course c ON c.id = ps.course_id
+        WHERE ps.created_by_user_id = :user_id
+          AND ps.status = 'in_progress'
+        ORDER BY ps.started_at DESC, ps.id DESC
+    """
+
+    return fetch_all(sql, {"user_id": current_user["id"]})
+
 @app.get("/players")
 def get_players() -> list[dict]:
     sql = """

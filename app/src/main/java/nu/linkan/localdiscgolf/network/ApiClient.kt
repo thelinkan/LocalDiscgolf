@@ -6,6 +6,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+class ApiHttpException(
+    val statusCode: Int,
+    val responseBody: String
+) : Exception("HTTP $statusCode: $responseBody")
+
 object ApiClient {
     private val client = OkHttpClient()
     private val gson = Gson()
@@ -51,7 +56,12 @@ object ApiClient {
                 println("GET /me responseBody: $responseBody")
 
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Get /me failed: ${response.code} $responseBody"))
+                    return Result.failure(
+                        ApiHttpException(
+                            statusCode = response.code,
+                            responseBody = responseBody
+                        )
+                    )
                 }
 
                 val parsed = gson.fromJson(responseBody, MeResponse::class.java)

@@ -131,6 +131,8 @@ import nu.linkan.localdiscgolf.network.CreateRoundPlayerApiRequest
 import nu.linkan.localdiscgolf.network.CurrentRoundApiResponse
 import nu.linkan.localdiscgolf.network.UpdateHoleApiRequest
 import nu.linkan.localdiscgolf.network.UpdateHoleScoreApiRequest
+import nu.linkan.localdiscgolf.network.ApiHttpException
+import nu.linkan.localdiscgolf.network.MeResponse
 
 import android.content.Context
 import android.widget.Toast
@@ -164,6 +166,7 @@ class MainActivity : ComponentActivity() {
                 var apiPort by remember { mutableStateOf(prefs.getString("port", "8000") ?: "8000") }
                 var authToken by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
                 var loggedInUsername by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
+                var isCheckingSavedLogin by remember { mutableStateOf(authToken.isNotBlank()) }
 
                 var apiCourses by remember { mutableStateOf<List<CourseApiResponse>>(emptyList()) }
                 var apiLayouts by remember { mutableStateOf<List<LayoutApiResponse>>(emptyList()) }
@@ -198,6 +201,58 @@ class MainActivity : ComponentActivity() {
                 var playerListRows by remember { mutableStateOf<List<PlayerListRow>>(emptyList()) }
                 var courseListRows by remember { mutableStateOf<List<CourseListRow>>(emptyList()) }
 
+                LaunchedEffect(Unit) {
+                    if (authToken.isBlank()) {
+                        isCheckingSavedLogin = false
+                        return@LaunchedEffect
+                    }
+
+                    if (apiHost.isBlank() || apiPort.isBlank()) {
+                        isCheckingSavedLogin = false
+                        return@LaunchedEffect
+                    }
+
+                    val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                    val result: Result<MeResponse> = withContext(Dispatchers.IO) {
+                        ApiClient.getMe(baseUrl, authToken)
+                    }
+
+                    result.fold(
+                        onSuccess = { me ->
+                            loggedInUsername = me.username
+
+                            prefs.edit()
+                                .putString("username", me.username)
+                                .apply()
+                        },
+                        onFailure = { error ->
+                            if (error is ApiHttpException && error.statusCode == 401) {
+                                prefs.edit()
+                                    .remove("token")
+                                    .remove("username")
+                                    .apply()
+
+                                authToken = ""
+                                loggedInUsername = ""
+
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Din inloggning har gått ut. Logga in igen.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Kunde inte kontrollera inloggningen mot servern.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
+
+                    isCheckingSavedLogin = false
+                }
                 LaunchedEffect(Unit) {
                     launch {
                         playerDao.observeActivePlayers().collectLatest { players = it }
@@ -245,7 +300,7 @@ class MainActivity : ComponentActivity() {
                     apiHost = apiHost,
                     apiPort = apiPort,
                     authToken = authToken,
-                    loggedInUsername = loggedInUsername,
+                    loggedInUsername = if (isCheckingSavedLogin) "" else loggedInUsername,
                     onApiHostChange = { apiHost = it },
                     onApiPortChange = { apiPort = it },
                     onAuthTokenChange = { authToken = it },
@@ -286,6 +341,7 @@ class MainActivity : ComponentActivity() {
 
                         authToken = ""
                         loggedInUsername = ""
+                        isCheckingSavedLogin = false
 
                         Toast.makeText(this, "Utloggad", Toast.LENGTH_SHORT).show()
                     },

@@ -514,7 +514,7 @@ class MainActivity : ComponentActivity() {
                                             Toast.LENGTH_SHORT
                                         ).show()
 
-                                        navController.navigate("api_round_hole/${round.id}/1")
+                                        onCreated(round.id)
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(

@@ -132,7 +132,126 @@ def get_round_progress_summary(round_id: int, up_to_sequence_number: int) -> lis
             "up_to_sequence_number": up_to_sequence_number,
         },
     )
-    
+ 
+def build_round_hole_response(round_id: int, sequence_number: int) -> dict:
+    rnd = get_round(round_id)
+
+    players = fetch_all(
+        """
+        SELECT
+            sp.id AS session_player_id,
+            sp.player_id,
+            p.name AS player_name,
+            sp.layout_id,
+            l.name AS layout_name,
+            sp.start_order,
+            sp.approval_required,
+            sp.approval_state
+        FROM session_player sp
+        INNER JOIN player p ON p.id = sp.player_id
+        LEFT JOIN layout l ON l.id = sp.layout_id
+        WHERE sp.play_session_id = :round_id
+        ORDER BY sp.start_order
+        """,
+        {"round_id": round_id},
+    )
+
+    holes = fetch_all(
+        """
+        SELECT
+            sp.id AS session_player_id,
+            sp.player_id,
+            p.name AS player_name,
+            sp.start_order,
+            sph.sequence_number,
+            sph.hole_id,
+            sph.hole_variant_id,
+            sph.hole_number_snapshot,
+            sph.hole_name_snapshot,
+            sph.tee_name_snapshot,
+            sph.basket_name_snapshot,
+            sph.length_snapshot_meters,
+            sph.par_snapshot,
+            sph.throws_count,
+            sph.is_completed
+        FROM session_player_hole sph
+        INNER JOIN session_player sp ON sp.id = sph.session_player_id
+        INNER JOIN player p ON p.id = sp.player_id
+        WHERE sp.play_session_id = :round_id
+        ORDER BY sph.sequence_number, sp.start_order
+        """,
+        {"round_id": round_id},
+    )
+
+    if not holes:
+        raise HTTPException(status_code=400, detail="Round has no holes")
+
+    holes_by_sequence: dict[int, list[dict]] = {}
+    for row in holes:
+        holes_by_sequence.setdefault(row["sequence_number"], []).append(row)
+
+    if sequence_number not in holes_by_sequence:
+        raise HTTPException(status_code=404, detail="Hole not found in round")
+
+    ordered_sequences = sorted(holes_by_sequence.keys())
+
+    completed_sequences = [
+        seq
+        for seq in ordered_sequences
+        if all(row["throws_count"] is not None for row in holes_by_sequence[seq])
+    ]
+
+    current_hole_rows = holes_by_sequence[sequence_number]
+    current_hole_info = current_hole_rows[0]
+
+    progress_summary = get_round_progress_summary(
+        round_id=round_id,
+        up_to_sequence_number=sequence_number - 1,
+    )
+
+    return {
+        "round": {
+            "id": rnd["id"],
+            "course_id": rnd["course_id"],
+            "course_name": rnd["course_name"],
+            "created_by_user_id": rnd["created_by_user_id"],
+            "created_by_username": rnd["created_by_username"],
+            "started_at": rnd["started_at"],
+            "ended_at": rnd["ended_at"],
+            "status": rnd["status"],
+        },
+        "progress": {
+            "total_holes": len(ordered_sequences),
+            "completed_holes": len(completed_sequences),
+            "current_sequence_number": sequence_number,
+            "is_finished_by_scores": len(completed_sequences) == len(ordered_sequences),
+        },
+        "players": players,
+        "summary_to_previous_hole": progress_summary,
+        "current_hole": {
+            "sequence_number": current_hole_info["sequence_number"],
+            "hole_id": current_hole_info["hole_id"],
+            "hole_variant_id": current_hole_info["hole_variant_id"],
+            "hole_number": current_hole_info["hole_number_snapshot"],
+            "hole_name": current_hole_info["hole_name_snapshot"],
+            "tee_name": current_hole_info["tee_name_snapshot"],
+            "basket_name": current_hole_info["basket_name_snapshot"],
+            "length_meters": current_hole_info["length_snapshot_meters"],
+            "par_value": current_hole_info["par_snapshot"],
+            "scores": [
+                {
+                    "session_player_id": row["session_player_id"],
+                    "player_id": row["player_id"],
+                    "player_name": row["player_name"],
+                    "start_order": row["start_order"],
+                    "throws_count": row["throws_count"],
+                    "is_completed": bool(row["is_completed"]),
+                }
+                for row in current_hole_rows
+            ],
+        },
+    }
+ 
 def get_user_by_username(username: str) -> dict:
     user = fetch_one(
         """
@@ -850,6 +969,14 @@ def get_current_round_state(round_id: int) -> dict:
             ],
         },
     }
+
+@app.get("/rounds/{round_id}/holes/{sequence_number}")
+def get_round_hole(
+    round_id: int,
+    sequence_number: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    return build_round_hole_response(round_id, sequence_number)
 
 @app.get("/users/{username}/players")
 def get_user_players(username: str, current_user: dict = Depends(get_current_user)) -> dict:

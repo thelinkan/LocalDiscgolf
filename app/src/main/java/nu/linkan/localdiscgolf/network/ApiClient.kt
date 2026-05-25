@@ -350,4 +350,43 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getRoundHole(
+        baseUrl: String,
+        token: String,
+        roundId: Long,
+        sequenceNumber: Int
+    ): Result<CurrentRoundApiResponse> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/rounds/$roundId/holes/$sequenceNumber")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /rounds/$roundId/holes/$sequenceNumber responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception(
+                            "Get /rounds/$roundId/holes/$sequenceNumber failed: " +
+                                    "${response.code} $responseBody"
+                        )
+                    )
+                }
+
+                val parsed = gson.fromJson(
+                    responseBody,
+                    CurrentRoundApiResponse::class.java
+                )
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

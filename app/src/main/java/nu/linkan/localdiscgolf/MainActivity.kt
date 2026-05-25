@@ -445,7 +445,14 @@ class MainActivity : ComponentActivity() {
                                 result.fold(
                                     onSuccess = { round ->
                                         apiRoundDetail = round
-                                        onCreated(round.id)
+
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Serverrunda skapad",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+
+                                        navController.navigate("api_round_hole/${round.id}/1")
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(
@@ -459,14 +466,25 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     apiCurrentRound = apiCurrentRound,
-                    onLoadApiCurrentRound = { roundId ->
+                    onLoadApiRoundHole = { roundId, sequenceNumber ->
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
-                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         } else {
                             lifecycleScope.launch {
+                                apiCurrentRound = null
+
                                 val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
-                                val result = withContext(Dispatchers.IO) {
-                                    ApiClient.getCurrentRound(baseUrl, authToken, roundId)
+                                val result: Result<CurrentRoundApiResponse> = withContext(Dispatchers.IO) {
+                                    ApiClient.getRoundHole(
+                                        baseUrl = baseUrl,
+                                        token = authToken,
+                                        roundId = roundId,
+                                        sequenceNumber = sequenceNumber
+                                    )
                                 }
 
                                 result.fold(
@@ -476,7 +494,7 @@ class MainActivity : ComponentActivity() {
                                     onFailure = { error ->
                                         Toast.makeText(
                                             this@MainActivity,
-                                            "Kunde inte hämta aktuell serverrunda: ${error.message}",
+                                            "Kunde inte hämta hålet: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -484,9 +502,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onSaveApiHole = { roundId, sequenceNumber, values ->
+                    onSaveApiHole = { roundId, sequenceNumber, values, onSaved ->
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
-                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         } else {
                             lifecycleScope.launch {
                                 val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
@@ -501,26 +523,18 @@ class MainActivity : ComponentActivity() {
                                 )
 
                                 val result = withContext(Dispatchers.IO) {
-                                    ApiClient.updateRoundHole(baseUrl, authToken, roundId, sequenceNumber, request)
+                                    ApiClient.updateRoundHole(
+                                        baseUrl = baseUrl,
+                                        token = authToken,
+                                        roundId = roundId,
+                                        sequenceNumber = sequenceNumber,
+                                        requestBody = request
+                                    )
                                 }
 
                                 result.fold(
                                     onSuccess = {
-                                        val reload = withContext(Dispatchers.IO) {
-                                            ApiClient.getCurrentRound(baseUrl, authToken, roundId)
-                                        }
-                                        reload.fold(
-                                            onSuccess = { current ->
-                                                apiCurrentRound = current
-                                            },
-                                            onFailure = { error ->
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    "Hålet sparades men rundan kunde inte laddas om: ${error.message}",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                            }
-                                        )
+                                        onSaved()
                                     },
                                     onFailure = { error ->
                                         Toast.makeText(
@@ -994,8 +1008,8 @@ fun AppNavHost(
     onLoadApiNewRoundLayouts: (Long) -> Unit,
     onCreateApiRound: (Long, Long, List<Long>, (Long) -> Unit) -> Unit,
     apiCurrentRound: CurrentRoundApiResponse?,
-    onLoadApiCurrentRound: (Long) -> Unit,
-    onSaveApiHole: (Long, Int, List<Pair<Long, Int?>>) -> Unit,
+    onLoadApiRoundHole: (Long, Int) -> Unit,
+    onSaveApiHole: (Long, Int, List<Pair<Long, Int?>>, () -> Unit) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -1136,44 +1150,64 @@ fun AppNavHost(
         }
 
         composable(
-            route = "api_round_hole/{roundId}",
+            route = "api_round_hole/{roundId}/{sequenceNumber}",
             arguments = listOf(
-                navArgument("roundId") { type = NavType.LongType }
+                navArgument("roundId") { type = NavType.LongType },
+                navArgument("sequenceNumber") { type = NavType.IntType }
             )
         ) { backStackEntry ->
             val roundId = backStackEntry.arguments?.getLong("roundId") ?: return@composable
-            val current = apiCurrentRound
+            val sequenceNumber = backStackEntry.arguments?.getInt("sequenceNumber") ?: return@composable
 
-            val currentSequence = current?.progress?.current_sequence_number ?: 1
-            val totalHoles = current?.progress?.total_holes ?: 1
+            LaunchedEffect(roundId, sequenceNumber) {
+                onLoadApiRoundHole(roundId, sequenceNumber)
+            }
+
+            val totalHoles = apiCurrentRound?.progress?.total_holes ?: 0
 
             ApiRoundHoleScreen(
-                currentRound = current,
+                currentRound = apiCurrentRound,
                 onBack = { navController.popBackStack() },
-                onPreviousHole = if (currentSequence > 1) {
-                    {
-                        onLoadApiCurrentRound(roundId)
+
+                onPreviousHole = if (sequenceNumber > 1) {
+                    { values ->
+                        onSaveApiHole(roundId, sequenceNumber, values) {
+                            navController.navigate(
+                                "api_round_hole/$roundId/${sequenceNumber - 1}"
+                            )
+                        }
                     }
                 } else {
                     null
                 },
-                onNextHole = if (currentSequence < totalHoles) {
-                    {
-                        onLoadApiCurrentRound(roundId)
+
+                onNextHole = if (totalHoles > 0 && sequenceNumber < totalHoles) {
+                    { values ->
+                        onSaveApiHole(roundId, sequenceNumber, values) {
+                            navController.navigate(
+                                "api_round_hole/$roundId/${sequenceNumber + 1}"
+                            )
+                        }
                     }
                 } else {
                     null
                 },
-                onShowSummary = {
-                    onLoadApiRoundDetail(roundId)
-                    navController.navigate("api_round_detail")
+
+                onShowSummary = { values ->
+                    onSaveApiHole(roundId, sequenceNumber, values) {
+                        onLoadApiRoundDetail(roundId)
+                        navController.navigate("api_round_detail")
+                    }
                 },
-                onSaveHole = { sequenceNumber, values ->
-                    onSaveApiHole(roundId, sequenceNumber, values)
-                },
-                onFinishRound = {
-                    onLoadApiRoundDetail(roundId)
-                    navController.navigate("api_round_detail")
+
+                onFinishRound = { values ->
+                    onSaveApiHole(roundId, sequenceNumber, values) {
+                        Toast.makeText(
+                            activity,
+                            "Avsluta runda kopplas in i nästa steg",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             )
         }
@@ -1194,8 +1228,7 @@ fun AppNavHost(
                 },
                 onCreateRound = { courseId, layoutId, playerIds ->
                     onCreateApiRound(courseId, layoutId, playerIds) { roundId ->
-                        onLoadApiCurrentRound(roundId)
-                        navController.navigate("api_round_hole/$roundId")
+                        navController.navigate("api_round_hole/$roundId/1")
                     }
                 }
             )

@@ -40,11 +40,10 @@ import nu.linkan.localdiscgolf.network.CurrentRoundSummaryApiResponse
 fun ApiRoundHoleScreen(
     currentRound: CurrentRoundApiResponse?,
     onBack: () -> Unit,
-    onPreviousHole: (() -> Unit)?,
-    onNextHole: (() -> Unit)?,
-    onShowSummary: () -> Unit,
-    onSaveHole: (Int, List<Pair<Long, Int?>>) -> Unit,
-    onFinishRound: () -> Unit
+    onPreviousHole: ((List<Pair<Long, Int?>>) -> Unit)?,
+    onNextHole: ((List<Pair<Long, Int?>>) -> Unit)?,
+    onShowSummary: (List<Pair<Long, Int?>>) -> Unit,
+    onFinishRound: (List<Pair<Long, Int?>>) -> Unit
 ) {
     val round = currentRound
     val header = round?.current_hole
@@ -58,13 +57,16 @@ fun ApiRoundHoleScreen(
         }
     }
 
-    fun saveCurrentHole() {
-        val sequenceNumber = round?.current_hole?.sequence_number ?: return
-        val valuesToSave = round.current_hole.scores.map { score ->
-            val throwsValue = inputValues[score.player_id]?.trim()?.toIntOrNull()
+    fun valuesToSave(): List<Pair<Long, Int?>> {
+        val activeRound = currentRound ?: return emptyList()
+
+        return activeRound.current_hole.scores.map { score ->
+            val throwsValue = inputValues[score.player_id]
+                ?.trim()
+                ?.toIntOrNull()
+
             score.player_id to throwsValue
         }
-        onSaveHole(sequenceNumber, valuesToSave)
     }
 
     Scaffold(
@@ -103,8 +105,7 @@ fun ApiRoundHoleScreen(
                     ) {
                         Button(
                             onClick = {
-                                saveCurrentHole()
-                                onPreviousHole?.invoke()
+                                onPreviousHole?.invoke(valuesToSave())
                             },
                             modifier = Modifier.weight(1f),
                             enabled = onPreviousHole != null
@@ -114,8 +115,7 @@ fun ApiRoundHoleScreen(
 
                         Button(
                             onClick = {
-                                saveCurrentHole()
-                                onNextHole?.invoke()
+                                onNextHole?.invoke(valuesToSave())
                             },
                             modifier = Modifier.weight(1f),
                             enabled = onNextHole != null
@@ -126,8 +126,7 @@ fun ApiRoundHoleScreen(
 
                     Button(
                         onClick = {
-                            saveCurrentHole()
-                            onShowSummary()
+                            onShowSummary(valuesToSave())
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -135,7 +134,10 @@ fun ApiRoundHoleScreen(
                     }
 
                     Button(
-                        onClick = { showFinishDialog = true },
+                        onClick = {
+                            showFinishDialog = false
+                            onFinishRound(valuesToSave())
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Avsluta runda")
@@ -215,9 +217,8 @@ fun ApiRoundHoleScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        saveCurrentHole()
                         showFinishDialog = false
-                        onFinishRound()
+                        onFinishRound(valuesToSave())
                     }
                 ) {
                     Text("Ja")

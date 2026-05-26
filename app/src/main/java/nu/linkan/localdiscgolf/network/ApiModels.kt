@@ -67,7 +67,8 @@ data class PlayerApiResponse(
     val owner_user_id: Long?,
     val created_by_user_id: Long?,
     val is_guest: Int,
-    val is_active: Int
+    val is_active: Int,
+    val round_count: Int
 )
 
 data class ScoreablePlayerApiResponse(
@@ -77,7 +78,8 @@ data class ScoreablePlayerApiResponse(
     val created_by_user_id: Long?,
     val is_guest: Int,
     val is_active: Int,
-    val permission_level: String
+    val permission_level: String,
+    val round_count: Int
 )
 
 data class UserPlayersResponse(
@@ -252,3 +254,4 @@ data class InProgressServerRoundApiResponse(
     val status: String,
     val player_count: Int
 )
+

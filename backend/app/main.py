@@ -1032,7 +1032,15 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.owner_user_id,
             p.created_by_user_id,
             p.is_guest,
-            p.is_active
+            p.is_active,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp
+                INNER JOIN play_session ps ON ps.id = sp.play_session_id
+                WHERE sp.player_id = p.id
+                  AND ps.status = 'completed'
+                  AND sp.approval_state = 'approved'
+            ) AS round_count
         FROM player p
         WHERE p.owner_user_id = :user_id
           AND p.is_active = 1
@@ -1048,7 +1056,15 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.owner_user_id,
             p.created_by_user_id,
             p.is_guest,
-            p.is_active
+            p.is_active,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp
+                INNER JOIN play_session ps ON ps.id = sp.play_session_id
+                WHERE sp.player_id = p.id
+                  AND ps.status = 'completed'
+                  AND sp.approval_state = 'approved'
+            ) AS round_count
         FROM player p
         WHERE p.created_by_user_id = :user_id
           AND p.is_guest = 1
@@ -1067,7 +1083,15 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.created_by_user_id,
             p.is_guest,
             p.is_active,
-            upp.permission_level
+            upp.permission_level,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp
+                INNER JOIN play_session ps ON ps.id = sp.play_session_id
+                WHERE sp.player_id = p.id
+                  AND ps.status = 'completed'
+                  AND sp.approval_state = 'approved'
+            ) AS round_count
         FROM user_player_permission upp
         INNER JOIN player p ON p.id = upp.target_player_id
         WHERE upp.source_user_id = :user_id

@@ -3,6 +3,7 @@ package nu.linkan.localdiscgolf.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -57,6 +58,11 @@ fun ApiPlayersScreen(
                 Text("Inga serverspelare laddade.")
             }
         } else {
+            val guestPlayerIds = data.guest_players.map { it.id }.toSet()
+            val nonGuestScoreablePlayers = data.scoreable_players.filter {
+                it.id !in guestPlayerIds && data.own_player?.id != it.id
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -78,6 +84,7 @@ fun ApiPlayersScreen(
                     } else {
                         PlayerRow(
                             name = own.name,
+                            roundCount = own.round_count,
                             subtitle = "Egen spelare",
                             onClick = { onPlayerClick(own.id) }
                         )
@@ -99,6 +106,7 @@ fun ApiPlayersScreen(
                     items(data.guest_players) { player ->
                         PlayerRow(
                             name = player.name,
+                            roundCount = player.round_count,
                             subtitle = "Gästspelare",
                             onClick = { onPlayerClick(player.id) }
                         )
@@ -114,10 +122,10 @@ fun ApiPlayersScreen(
                     )
                 }
 
-                if (data.scoreable_players.isEmpty()) {
+                if (nonGuestScoreablePlayers.isEmpty()) {
                     item { Text("Inga spelare.") }
                 } else {
-                    items(data.scoreable_players) { player ->
+                    items(nonGuestScoreablePlayers) { player ->
                         val permissionText = when (player.permission_level) {
                             "auto_approve" -> "Autogodkänd"
                             "propose" -> "Kräver godkännande"
@@ -126,6 +134,7 @@ fun ApiPlayersScreen(
 
                         PlayerRow(
                             name = player.name,
+                            roundCount = player.round_count,
                             subtitle = permissionText,
                             onClick = { onPlayerClick(player.id) }
                         )
@@ -139,6 +148,7 @@ fun ApiPlayersScreen(
 @Composable
 private fun PlayerRow(
     name: String,
+    roundCount: Int,
     subtitle: String,
     onClick: () -> Unit
 ) {
@@ -146,12 +156,24 @@ private fun PlayerRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp)
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.titleMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                text = "$roundCount rundor",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodyMedium

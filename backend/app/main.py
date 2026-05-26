@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from collections import defaultdict
 
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -477,6 +478,43 @@ def can_access_player(current_user: dict, player: dict) -> bool:
     permission_level = get_permission_level(current_user["id"], player["id"])
     return permission_level in ("auto_approve", "propose")
 
+def relative_text_value(throws_count: float, par_value: float) -> float:
+    return round(throws_count - par_value, 2)
+
+
+def calculate_streak(results_newest_first: list[dict]) -> int:
+    """
+    Positiv svit: antal par eller bättre i rad från senaste spelade hålet.
+    Negativ svit: antal bogey eller sämre i rad från senaste spelade hålet.
+    """
+    if not results_newest_first:
+        return 0
+
+    latest_relative = (
+        int(results_newest_first[0]["throws_count"])
+        - int(results_newest_first[0]["par_value"])
+    )
+
+    if latest_relative <= 0:
+        streak = 0
+        for result in results_newest_first:
+            relative = int(result["throws_count"]) - int(result["par_value"])
+            if relative <= 0:
+                streak += 1
+            else:
+                break
+        return streak
+
+    streak = 0
+    for result in results_newest_first:
+        relative = int(result["throws_count"]) - int(result["par_value"])
+        if relative > 0:
+            streak += 1
+        else:
+            break
+
+    return -streak
+    
 def verify_password(plain_password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(
         plain_password.encode("utf-8"),
@@ -1156,6 +1194,269 @@ def get_player_rounds(
         ORDER BY ps.started_at DESC, ps.id DESC
     """
     return fetch_all(sql, {"player_id": player_id})    
+
+@app.get("/players/{player_id}/stats/holes")
+def get_player_hole_stats(
+    player_id: int,
+    course_id: int | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    player = get_player(player_id)
+
+    if not can_access_player(current_user, player):
+        raise HTTPException(
+            status_code=403,
+            detail="Not allowed to view this player's statistics",
+        )
+
+    course_filter = ""
+    params: dict = {"player_id": player_id}
+
+    if course_id is not None:
+        course_filter = "AND ps.course_id = :course_id"
+        params["course_id"] = course_id
+
+    rows = fetch_all(
+        f"""
+        SELECT
+            ps.id AS round_id,
+            ps.started_at,
+            c.id AS course_id,
+            c.name AS course_name,
+            sph.hole_id,
+            sph.hole_variant_id,
+            sph.hole_number_snapshot AS hole_number,
+            sph.hole_name_snapshot AS hole_name,
+            sph.tee_name_snapshot AS tee_name,
+            sph.basket_name_snapshot AS basket_name,
+            sph.length_snapshot_meters AS length_meters,
+            sph.par_snapshot AS par_value,
+            sph.throws_count
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN course c
+            ON c.id = ps.course_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          {course_filter}
+        ORDER BY ps.started_at DESC, ps.id DESC
+        """,
+        params,
+    )
+
+    rows_by_hole: dict[tuple[int, int, int | None], list[dict]] = defaultdict(list)
+
+    for row in rows:
+        key = (
+            int(row["course_id"]),
+            int(row["hole_id"]),
+            int(row["hole_variant_id"]) if row["hole_variant_id"] is not None else None,
+        )
+        rows_by_hole[key].append(row)
+
+    result: list[dict] = []
+
+    for hole_rows in rows_by_hole.values():
+        newest_row = hole_rows[0]
+        played_count = len(hole_rows)
+
+        throws_values = [int(row["throws_count"]) for row in hole_rows]
+        relative_values = [
+            int(row["throws_count"]) - int(row["par_value"])
+            for row in hole_rows
+        ]
+
+        average_throws = round(sum(throws_values) / played_count, 2)
+
+        last_10_average_throws: float | None = None
+        if played_count >= 11:
+            last_10_average_throws = round(sum(throws_values[:10]) / 10, 2)
+
+        result.append(
+            {
+                "course_id": int(newest_row["course_id"]),
+                "course_name": newest_row["course_name"],
+                "hole_id": int(newest_row["hole_id"]),
+                "hole_variant_id": (
+                    int(newest_row["hole_variant_id"])
+                    if newest_row["hole_variant_id"] is not None
+                    else None
+                ),
+                "hole_number": int(newest_row["hole_number"]),
+                "hole_name": newest_row["hole_name"],
+                "tee_name": newest_row["tee_name"],
+                "basket_name": newest_row["basket_name"],
+                "length_meters": int(newest_row["length_meters"]),
+                "par_value": int(newest_row["par_value"]),
+                "played_count": played_count,
+                "personal_best_throws": min(throws_values),
+                "streak": calculate_streak(hole_rows),
+                "average_throws": average_throws,
+                "last_10_average_throws": last_10_average_throws,
+                "birdie_or_better_count": sum(
+                    1 for relative in relative_values if relative <= -1
+                ),
+                "par_count": sum(
+                    1 for relative in relative_values if relative == 0
+                ),
+                "bogey_count": sum(
+                    1 for relative in relative_values if relative == 1
+                ),
+                "double_bogey_count": sum(
+                    1 for relative in relative_values if relative == 2
+                ),
+                "triple_bogey_or_worse_count": sum(
+                    1 for relative in relative_values if relative >= 3
+                ),
+            }
+        )
+
+    return sorted(
+        result,
+        key=lambda row: (
+            row["course_name"],
+            row["hole_number"],
+            row["tee_name"] or "",
+            row["basket_name"] or "",
+        ),
+    )
+    
+@app.get("/players/{player_id}/stats/layouts")
+def get_player_layout_stats(
+    player_id: int,
+    course_id: int | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    player = get_player(player_id)
+
+    if not can_access_player(current_user, player):
+        raise HTTPException(
+            status_code=403,
+            detail="Not allowed to view this player's statistics",
+        )
+
+    course_filter = ""
+    params: dict = {"player_id": player_id}
+
+    if course_id is not None:
+        course_filter = "AND ps.course_id = :course_id"
+        params["course_id"] = course_id
+
+    rows = fetch_all(
+        f"""
+        SELECT
+            ps.id AS round_id,
+            ps.started_at,
+            c.id AS course_id,
+            c.name AS course_name,
+            l.id AS layout_id,
+            l.name AS layout_name,
+            COUNT(sph.id) AS hole_count,
+            SUM(sph.par_snapshot) AS total_par,
+            SUM(sph.length_snapshot_meters) AS total_length_meters,
+            SUM(sph.throws_count) AS total_throws,
+            SUM(
+                CASE
+                    WHEN sph.throws_count IS NOT NULL THEN 1
+                    ELSE 0
+                END
+            ) AS played_holes
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN course c
+            ON c.id = ps.course_id
+        INNER JOIN layout l
+            ON l.id = sp.layout_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          {course_filter}
+        GROUP BY
+            ps.id,
+            ps.started_at,
+            c.id,
+            c.name,
+            l.id,
+            l.name
+        HAVING COUNT(sph.id) = SUM(
+            CASE
+                WHEN sph.throws_count IS NOT NULL THEN 1
+                ELSE 0
+            END
+        )
+        ORDER BY ps.started_at DESC, ps.id DESC
+        """,
+        params,
+    )
+
+    rows_by_layout: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        rows_by_layout[int(row["layout_id"])].append(row)
+
+    result: list[dict] = []
+
+    for layout_rows in rows_by_layout.values():
+        newest_row = layout_rows[0]
+        round_count = len(layout_rows)
+
+        throws_values = [int(row["total_throws"]) for row in layout_rows]
+        relative_values = [
+            int(row["total_throws"]) - int(row["total_par"])
+            for row in layout_rows
+        ]
+
+        best_index = min(
+            range(round_count),
+            key=lambda index: (
+                throws_values[index],
+                relative_values[index],
+            ),
+        )
+
+        average_throws = round(sum(throws_values) / round_count, 2)
+        average_relative = round(sum(relative_values) / round_count, 2)
+
+        last_10_average_throws: float | None = None
+        last_10_average_relative: float | None = None
+
+        if round_count >= 11:
+            latest_10_throws = throws_values[:10]
+            latest_10_relative = relative_values[:10]
+
+            last_10_average_throws = round(sum(latest_10_throws) / 10, 2)
+            last_10_average_relative = round(sum(latest_10_relative) / 10, 2)
+
+        result.append(
+            {
+                "course_id": int(newest_row["course_id"]),
+                "course_name": newest_row["course_name"],
+                "layout_id": int(newest_row["layout_id"]),
+                "layout_name": newest_row["layout_name"],
+                "total_par": int(newest_row["total_par"]),
+                "hole_count": int(newest_row["hole_count"]),
+                "total_length_meters": int(newest_row["total_length_meters"]),
+                "round_count": round_count,
+                "personal_best_throws": throws_values[best_index],
+                "personal_best_relative_to_par": relative_values[best_index],
+                "average_throws": average_throws,
+                "average_relative_to_par": average_relative,
+                "last_10_average_throws": last_10_average_throws,
+                "last_10_average_relative_to_par": last_10_average_relative,
+            }
+        )
+
+    return sorted(
+        result,
+        key=lambda row: (row["course_name"], row["layout_name"]),
+    )
     
 # =========================
 # Nya skriv-endpoints

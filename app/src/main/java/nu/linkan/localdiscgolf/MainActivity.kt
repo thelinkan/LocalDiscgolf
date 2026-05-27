@@ -120,6 +120,8 @@ import nu.linkan.localdiscgolf.ui.screens.ApiRoundDetailScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiNewRoundScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiRoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.ApiResumeRoundScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiPlayerDetailScreen
+import nu.linkan.localdiscgolf.ui.screens.ApiPlayerStatsScreen
 
 import nu.linkan.localdiscgolf.network.CourseApiResponse
 import nu.linkan.localdiscgolf.network.LayoutApiResponse
@@ -136,6 +138,8 @@ import nu.linkan.localdiscgolf.network.ApiHttpException
 import nu.linkan.localdiscgolf.network.MeResponse
 import nu.linkan.localdiscgolf.network.CompleteRoundApiRequest
 import nu.linkan.localdiscgolf.network.InProgressServerRoundApiResponse
+import nu.linkan.localdiscgolf.network.PlayerLayoutStatsApiResponse
+import nu.linkan.localdiscgolf.network.PlayerHoleStatsApiResponse
 
 import android.content.Context
 import android.widget.Toast
@@ -183,6 +187,19 @@ class MainActivity : ComponentActivity() {
                 var apiInProgressRounds by remember {
                     mutableStateOf<List<InProgressServerRoundApiResponse>>(emptyList())
                 }
+
+                var selectedApiPlayerId by remember { mutableStateOf<Long?>(null) }
+                var selectedApiPlayerRoundCount by remember { mutableStateOf(0) }
+
+                var apiLayoutStats by remember {
+                    mutableStateOf<List<PlayerLayoutStatsApiResponse>>(emptyList())
+                }
+
+                var apiHoleStats by remember {
+                    mutableStateOf<List<PlayerHoleStatsApiResponse>>(emptyList())
+                }
+
+                var apiStatsCourseId by remember { mutableStateOf<Long?>(null) }
 
                 val navController = rememberNavController()
 
@@ -423,6 +440,83 @@ class MainActivity : ComponentActivity() {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte hämta serverspelare: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    selectedApiPlayerId = selectedApiPlayerId,
+                    selectedApiPlayerName = selectedApiPlayerName,
+                    selectedApiPlayerRoundCount = selectedApiPlayerRoundCount,
+
+                    onSelectApiPlayer = { playerId, playerName, roundCount ->
+                        selectedApiPlayerId = playerId
+                        selectedApiPlayerName = playerName
+                        selectedApiPlayerRoundCount = roundCount
+                    },
+
+                    apiLayoutStats = apiLayoutStats,
+                    apiHoleStats = apiHoleStats,
+                    apiStatsCourseId = apiStatsCourseId,
+
+                    onLoadApiPlayerStats = { playerId, courseId ->
+                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            apiStatsCourseId = courseId
+                            apiLayoutStats = emptyList()
+                            apiHoleStats = emptyList()
+
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val layoutResult: Result<List<PlayerLayoutStatsApiResponse>> =
+                                    withContext(Dispatchers.IO) {
+                                        ApiClient.getPlayerLayoutStats(
+                                            baseUrl = baseUrl,
+                                            token = authToken,
+                                            playerId = playerId,
+                                            courseId = courseId
+                                        )
+                                    }
+
+                                val holeResult: Result<List<PlayerHoleStatsApiResponse>> =
+                                    withContext(Dispatchers.IO) {
+                                        ApiClient.getPlayerHoleStats(
+                                            baseUrl = baseUrl,
+                                            token = authToken,
+                                            playerId = playerId,
+                                            courseId = courseId
+                                        )
+                                    }
+
+                                layoutResult.fold(
+                                    onSuccess = { stats ->
+                                        apiLayoutStats = stats
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta layoutstatistik: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+
+                                holeResult.fold(
+                                    onSuccess = { stats ->
+                                        apiHoleStats = stats
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Kunde inte hämta hålstatistik: ${error.message}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -895,7 +989,6 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     apiPlayerRounds = apiPlayerRounds,
-                    selectedApiPlayerName = selectedApiPlayerName,
                     onLoadApiPlayerRounds = { playerId, playerName ->
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
@@ -1187,6 +1280,14 @@ fun AppNavHost(
     apiInProgressRounds: List<InProgressServerRoundApiResponse>,
     onLoadApiInProgressRounds: () -> Unit,
     onResumeApiRound: (Long, (Int) -> Unit) -> Unit,
+    selectedApiPlayerId: Long?,
+    selectedApiPlayerRoundCount: Int,
+    onSelectApiPlayer: (Long, String, Int) -> Unit,
+
+    apiLayoutStats: List<PlayerLayoutStatsApiResponse>,
+    apiHoleStats: List<PlayerHoleStatsApiResponse>,
+    apiStatsCourseId: Long?,
+    onLoadApiPlayerStats: (Long, Long?) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
     NavHost(
@@ -1506,15 +1607,50 @@ fun AppNavHost(
             ApiPlayersScreen(
                 data = apiUserPlayers,
                 onBack = { navController.popBackStack() },
-                onPlayerClick = { playerId ->
-                    val playerName =
-                        apiUserPlayers?.own_player?.takeIf { it.id == playerId }?.name
-                            ?: apiUserPlayers?.guest_players?.firstOrNull { it.id == playerId }?.name
-                            ?: apiUserPlayers?.scoreable_players?.firstOrNull { it.id == playerId }?.name
-                            ?: "Spelare"
+                onPlayerClick = { playerId, playerName, roundCount ->
+                    onSelectApiPlayer(playerId, playerName, roundCount)
+                    navController.navigate("api_player_detail")
+                }
+            )
+        }
 
-                    onLoadApiPlayerRounds(playerId, playerName)
-                    navController.navigate("api_player_rounds")
+        composable("api_player_detail") {
+            val playerId = selectedApiPlayerId
+
+            ApiPlayerDetailScreen(
+                playerName = selectedApiPlayerName,
+                roundCount = selectedApiPlayerRoundCount,
+                onBack = { navController.popBackStack() },
+                onRoundsClick = {
+                    if (playerId != null) {
+                        onLoadApiPlayerRounds(playerId, selectedApiPlayerName)
+                        navController.navigate("api_player_rounds")
+                    }
+                },
+                onStatsClick = {
+                    if (playerId != null) {
+                        onLoadApiCourses()
+                        onLoadApiPlayerStats(playerId, null)
+                        navController.navigate("api_player_stats")
+                    }
+                }
+            )
+        }
+
+        composable("api_player_stats") {
+            val playerId = selectedApiPlayerId
+
+            ApiPlayerStatsScreen(
+                playerName = selectedApiPlayerName,
+                courses = apiCourses,
+                selectedCourseId = apiStatsCourseId,
+                layoutStats = apiLayoutStats,
+                holeStats = apiHoleStats,
+                onBack = { navController.popBackStack() },
+                onCourseSelected = { courseId ->
+                    if (playerId != null) {
+                        onLoadApiPlayerStats(playerId, courseId)
+                    }
                 }
             )
         }

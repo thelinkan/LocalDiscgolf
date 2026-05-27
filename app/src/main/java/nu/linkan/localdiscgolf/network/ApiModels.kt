@@ -255,3 +255,42 @@ data class InProgressServerRoundApiResponse(
     val player_count: Int
 )
 
+data class PlayerLayoutStatsApiResponse(
+    val course_id: Long,
+    val course_name: String,
+    val layout_id: Long,
+    val layout_name: String,
+    val total_par: Int,
+    val hole_count: Int,
+    val total_length_meters: Int,
+    val round_count: Int,
+    val personal_best_throws: Int,
+    val personal_best_relative_to_par: Int,
+    val average_throws: Double,
+    val average_relative_to_par: Double,
+    val last_10_average_throws: Double?,
+    val last_10_average_relative_to_par: Double?
+)
+
+data class PlayerHoleStatsApiResponse(
+    val course_id: Long,
+    val course_name: String,
+    val hole_id: Long,
+    val hole_variant_id: Long?,
+    val hole_number: Int,
+    val hole_name: String?,
+    val tee_name: String?,
+    val basket_name: String?,
+    val length_meters: Int,
+    val par_value: Int,
+    val played_count: Int,
+    val personal_best_throws: Int,
+    val streak: Int,
+    val average_throws: Double,
+    val last_10_average_throws: Double?,
+    val birdie_or_better_count: Int,
+    val par_count: Int,
+    val bogey_count: Int,
+    val double_bogey_count: Int,
+    val triple_bogey_or_worse_count: Int
+)

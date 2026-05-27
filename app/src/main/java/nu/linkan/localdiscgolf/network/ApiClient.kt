@@ -473,4 +473,92 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun getPlayerLayoutStats(
+        baseUrl: String,
+        token: String,
+        playerId: Long,
+        courseId: Long?
+    ): Result<List<PlayerLayoutStatsApiResponse>> {
+        return try {
+            val url = if (courseId == null) {
+                "$baseUrl/players/$playerId/stats/layouts"
+            } else {
+                "$baseUrl/players/$playerId/stats/layouts?course_id=$courseId"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET player layout stats responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get layout stats failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, PlayerLayoutStatsApiResponse::class.java)
+                    .type
+
+                val parsed: List<PlayerLayoutStatsApiResponse> =
+                    gson.fromJson(responseBody, listType)
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getPlayerHoleStats(
+        baseUrl: String,
+        token: String,
+        playerId: Long,
+        courseId: Long?
+    ): Result<List<PlayerHoleStatsApiResponse>> {
+        return try {
+            val url = if (courseId == null) {
+                "$baseUrl/players/$playerId/stats/holes"
+            } else {
+                "$baseUrl/players/$playerId/stats/holes?course_id=$courseId"
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET player hole stats responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get hole stats failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, PlayerHoleStatsApiResponse::class.java)
+                    .type
+
+                val parsed: List<PlayerHoleStatsApiResponse> =
+                    gson.fromJson(responseBody, listType)
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

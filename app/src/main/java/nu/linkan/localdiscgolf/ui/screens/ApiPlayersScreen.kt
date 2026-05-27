@@ -31,7 +31,7 @@ import nu.linkan.localdiscgolf.network.UserPlayersResponse
 fun ApiPlayersScreen(
     data: UserPlayersResponse?,
     onBack: () -> Unit,
-    onPlayerClick: (Long) -> Unit = {}
+    onPlayerClick: (Long, String, Int) -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -86,7 +86,9 @@ fun ApiPlayersScreen(
                             name = own.name,
                             roundCount = own.round_count,
                             subtitle = "Egen spelare",
-                            onClick = { onPlayerClick(own.id) }
+                            onClick = {
+                                onPlayerClick(own.id, own.name, own.round_count)
+                            }
                         )
                     }
                 }
@@ -108,7 +110,9 @@ fun ApiPlayersScreen(
                             name = player.name,
                             roundCount = player.round_count,
                             subtitle = "Gästspelare",
-                            onClick = { onPlayerClick(player.id) }
+                            onClick = {
+                                onPlayerClick(player.id, player.name, player.round_count)
+                            }
                         )
                     }
                 }
@@ -136,7 +140,9 @@ fun ApiPlayersScreen(
                             name = player.name,
                             roundCount = player.round_count,
                             subtitle = permissionText,
-                            onClick = { onPlayerClick(player.id) }
+                            onClick = {
+                                onPlayerClick(player.id, player.name, player.round_count)
+                            }
                         )
                     }
                 }

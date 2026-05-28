@@ -10,6 +10,9 @@ import {
   getPlayerRounds,
   getRoundDetail,
   getUserPlayers,
+  getPublicCourses,
+  getPublicCourseLayouts ,
+  getPublicLayoutHoles,
   login,
   type CourseApiResponse,
   type MeResponse,
@@ -18,6 +21,9 @@ import {
   type PlayerRoundApiResponse,
   type RoundDetailApiResponse,
   type UserPlayersResponse,
+  type PublicCourseApiResponse,
+  type PublicLayoutApiResponse,
+  type PublicLayoutHoleApiResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -25,6 +31,12 @@ import PlayersPage, {
 import PlayerStatsPage from './components/PlayerStatsPage'
 import PlayerRoundsPage from './components/PlayerRoundsPage'
 import RoundDetailPage from './components/RoundDetailPage'
+import {
+  PublicCoursesPage,
+  PublicLayoutDetailPage,
+  PublicLayoutsPage,
+} from './components/PublicCoursesPages'
+
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
 
@@ -40,6 +52,9 @@ type AppView =
   | 'player_stats'
   | 'player_rounds'
   | 'round_detail'
+  | 'public_courses'
+  | 'public_layouts'
+  | 'public_layout_detail'
 
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
@@ -83,6 +98,26 @@ function App() {
 
   const [isLoadingRoundDetail, setIsLoadingRoundDetail] = useState(false)
   const [roundDetailError, setRoundDetailError] = useState<string | null>(null)
+
+  const [publicCourses, setPublicCourses] =
+    useState<PublicCourseApiResponse[]>([])
+
+  const [selectedPublicCourse, setSelectedPublicCourse] =
+    useState<PublicCourseApiResponse | null>(null)
+
+  const [publicLayouts, setPublicLayouts] =
+    useState<PublicLayoutApiResponse[]>([])
+
+  const [includeInactiveLayouts, setIncludeInactiveLayouts] = useState(false)
+
+  const [selectedPublicLayout, setSelectedPublicLayout] =
+    useState<PublicLayoutApiResponse | null>(null)
+
+  const [publicLayoutHoles, setPublicLayoutHoles] =
+    useState<PublicLayoutHoleApiResponse[]>([])
+
+  const [isLoadingPublicData, setIsLoadingPublicData] = useState(false)
+  const [publicDataError, setPublicDataError] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -223,6 +258,73 @@ function App() {
   }
 
   if (authStatus === 'logged_out') {
+    if (view === 'public_courses') {
+      return (
+        <div className="page">
+          <PublicSiteHeader
+            onHome={() => setView('home')}
+            onLogin={() => setView('home')}
+          />
+
+          <PublicCoursesPage
+            courses={publicCourses}
+            isLoading={isLoadingPublicData}
+            error={publicDataError}
+            onBack={() => setView('home')}
+            onCourseClick={(course) => void openPublicLayouts(course)}
+          />
+        </div>
+      )
+    }
+
+    if (view === 'public_layouts' && selectedPublicCourse) {
+      return (
+        <div className="page">
+          <PublicSiteHeader
+            onHome={() => setView('home')}
+            onLogin={() => setView('home')}
+          />
+
+          <PublicLayoutsPage
+            course={selectedPublicCourse}
+            layouts={publicLayouts}
+            includeInactive={includeInactiveLayouts}
+            isLoading={isLoadingPublicData}
+            error={publicDataError}
+            onBack={() => setView('public_courses')}
+            onIncludeInactiveChange={(checked) =>
+              void changeIncludeInactiveLayouts(checked)
+            }
+            onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
+          />
+        </div>
+      )
+    }
+
+    if (
+      view === 'public_layout_detail' &&
+      selectedPublicCourse &&
+      selectedPublicLayout
+    ) {
+      return (
+        <div className="page">
+          <PublicSiteHeader
+            onHome={() => setView('home')}
+            onLogin={() => setView('home')}
+          />
+
+          <PublicLayoutDetailPage
+            course={selectedPublicCourse}
+            layout={selectedPublicLayout}
+            holes={publicLayoutHoles}
+            isLoading={isLoadingPublicData}
+            error={publicDataError}
+            onBack={() => setView('public_layouts')}
+          />
+        </div>
+      )
+    }
+
     return (
       <div className="page centered">
         <main className="login-card">
@@ -267,6 +369,15 @@ function App() {
               {isLoggingIn ? 'Loggar in…' : 'Logga in'}
             </button>
           </form>
+
+          <div className="public-login-link">
+            <button
+              className="secondary-button"
+              onClick={() => void openPublicCourses()}
+            >
+              Visa banor och layouter
+            </button>
+          </div>
         </main>
       </div>
     )
@@ -359,6 +470,76 @@ function App() {
     }
   }
 
+  async function openPublicCourses() {
+    setView('public_courses')
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      const courses = await getPublicCourses()
+      setPublicCourses(courses)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte hämta banor.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+  async function openPublicLayouts(course: PublicCourseApiResponse) {
+    setSelectedPublicCourse(course)
+    setIncludeInactiveLayouts(false)
+    setView('public_layouts')
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      const layouts = await getPublicCourseLayouts(course.id, false)
+      setPublicLayouts(layouts)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte hämta layouter.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+  async function changeIncludeInactiveLayouts(includeInactive: boolean) {
+    if (!selectedPublicCourse) {
+      return
+    }
+
+    setIncludeInactiveLayouts(includeInactive)
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      const layouts = await getPublicCourseLayouts(
+        selectedPublicCourse.id,
+        includeInactive,
+      )
+      setPublicLayouts(layouts)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte hämta layouter.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+  async function openPublicLayoutDetail(layout: PublicLayoutApiResponse) {
+    setSelectedPublicLayout(layout)
+    setView('public_layout_detail')
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      const holes = await getPublicLayoutHoles(layout.id)
+      setPublicLayoutHoles(holes)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte hämta layouthål.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
   async function changeStatsCourse(courseId: number | null) {
     if (!storedToken || !selectedPlayer) {
       return
@@ -433,6 +614,17 @@ function App() {
               Öppna statistik
             </button>
           </article>
+
+          <article className="feature-card">
+            <h2>Banor</h2>
+            <p>Visa banor, layouter och hålinformation.</p>
+            <button
+              className="primary-button"
+              onClick={() => void openPublicCourses()}
+            >
+              Öppna banor
+            </button>
+          </article>
         </section>
       </main>
       )}
@@ -482,7 +674,66 @@ function App() {
         />
       )}
 
+      {view === 'public_courses' && (
+        <PublicCoursesPage
+          courses={publicCourses}
+          isLoading={isLoadingPublicData}
+          error={publicDataError}
+          onBack={() => setView('home')}
+          onCourseClick={(course) => void openPublicLayouts(course)}
+        />
+      )}
+
+      {view === 'public_layouts' && selectedPublicCourse && (
+        <PublicLayoutsPage
+          course={selectedPublicCourse}
+          layouts={publicLayouts}
+          includeInactive={includeInactiveLayouts}
+          isLoading={isLoadingPublicData}
+          error={publicDataError}
+          onBack={() => setView('public_courses')}
+          onIncludeInactiveChange={(checked) =>
+            void changeIncludeInactiveLayouts(checked)
+          }
+          onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
+        />
+      )}
+
+      {view === 'public_layout_detail' &&
+        selectedPublicCourse &&
+        selectedPublicLayout && (
+          <PublicLayoutDetailPage
+            course={selectedPublicCourse}
+            layout={selectedPublicLayout}
+            holes={publicLayoutHoles}
+            isLoading={isLoadingPublicData}
+            error={publicDataError}
+            onBack={() => setView('public_layouts')}
+          />
+        )}
+
     </div>
+  )
+}
+
+function PublicSiteHeader({
+  onHome,
+  onLogin,
+}: {
+  onHome: () => void
+  onLogin: () => void
+}) {
+  return (
+    <header className="app-header">
+      <button className="brand-button" onClick={onHome}>
+        <p className="eyebrow">Discgolf</p>
+        <h1>LocalDiscgolf</h1>
+      </button>
+
+      <button className="secondary-button small-button" onClick={onLogin}>
+        Logga in
+      </button>
+    </header>
   )
 }
 

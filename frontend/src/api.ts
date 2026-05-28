@@ -89,6 +89,36 @@ export interface RoundDetailApiResponse {
   players: RoundDetailPlayerApiResponse[]
 }
 
+export interface PublicCourseApiResponse {
+  id: number
+  name: string
+  is_active: number
+  hole_count: number
+  layout_count: number
+}
+
+export interface PublicLayoutApiResponse {
+  id: number
+  course_id: number
+  name: string
+  description: string | null
+  is_active: number
+  hole_count: number
+  total_par: number
+  total_length_meters: number
+}
+
+export interface PublicLayoutHoleApiResponse {
+  sequence_number: number
+  hole_id: number
+  hole_number: number
+  hole_name: string | null
+  tee_name: string | null
+  basket_name: string | null
+  length_meters: number
+  par_value: number
+}
+
 export class ApiError extends Error {
   statusCode: number
   responseBody: string
@@ -312,4 +342,31 @@ export async function getRoundDetail(
   )
 
   return parseResponse<RoundDetailApiResponse>(response)
+}
+
+export async function getPublicCourses(): Promise<PublicCourseApiResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/courses`)
+
+  return parseResponse<PublicCourseApiResponse[]>(response)
+}
+
+export async function getPublicCourseLayouts(
+  courseId: number,
+  includeInactive: boolean,
+): Promise<PublicLayoutApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+
+  const response = await fetch(
+    `${API_BASE_URL}/courses/${courseId}/layouts${query}`,
+  )
+
+  return parseResponse<PublicLayoutApiResponse[]>(response)
+}
+
+export async function getPublicLayoutHoles(
+  layoutId: number,
+): Promise<PublicLayoutHoleApiResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/layouts/${layoutId}/holes`)
+
+  return parseResponse<PublicLayoutHoleApiResponse[]>(response)
 }

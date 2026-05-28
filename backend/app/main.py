@@ -569,7 +569,10 @@ def get_course_endpoint(course_id: int) -> dict:
 
 
 @app.get("/courses/{course_id}/layouts")
-def get_course_layouts(course_id: int) -> list[dict]:
+def get_course_layouts(
+  course_id: int,
+  include_inactive: bool = False,
+) -> list[dict]:
     course = fetch_one(
         """
         SELECT id, name, is_active
@@ -580,6 +583,8 @@ def get_course_layouts(course_id: int) -> list[dict]:
     )
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
+
+    active_filter = "" if include_inactive else "AND l.is_active = 1"
 
     sql = """
         SELECT
@@ -597,7 +602,7 @@ def get_course_layouts(course_id: int) -> list[dict]:
         LEFT JOIN layout_hole lh ON lh.layout_id = l.id
         LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
         WHERE l.course_id = :course_id
-          AND l.is_active = 1
+          AND (:include_inactive = 1 OR l.is_active = 1)
         GROUP BY
             l.id,
             l.course_id,
@@ -607,7 +612,8 @@ def get_course_layouts(course_id: int) -> list[dict]:
             l.is_active
         ORDER BY l.name
     """
-    return fetch_all(sql, {"course_id": course_id})
+    return fetch_all(sql, {"course_id": course_id,
+            "include_inactive": 1 if include_inactive else 0,})
 
 
 @app.get("/courses/{course_id}/holes")

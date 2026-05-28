@@ -4,8 +4,10 @@ import {
   ApiError,
   flagIsTrue,
   getMe,
+  getUserPlayers,
   login,
   type MeResponse,
+  type UserPlayersResponse,
 } from './api'
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
@@ -16,6 +18,8 @@ type AuthStatus =
   | 'logged_in'
   | 'server_unavailable'
 
+  type AppView = 'home' | 'players' | 'player_stats'
+
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [user, setUser] = useState<MeResponse | null>(null)
@@ -25,6 +29,12 @@ function App() {
   const [password, setPassword] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
+
+  const [view, setView] = useState<AppView>('home')
+
+  const [playersData, setPlayersData] = useState<UserPlayersResponse | null>(null)
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(false)
+  const [playersError, setPlayersError] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -199,6 +209,25 @@ function App() {
     )
   }
 
+  async function openPlayers() {
+    if (!storedToken || !user) {
+      return
+    }
+
+    setView('players')
+    setIsLoadingPlayers(true)
+    setPlayersError(null)
+
+    try {
+      const data = await getUserPlayers(storedToken, user.username)
+      setPlayersData(data)
+    } catch (error) {
+      setPlayersError(apiErrorText(error, 'Kunde inte hämta spelare.'))
+    } finally {
+      setIsLoadingPlayers(false)
+    }
+  }
+
   return (
     <div className="page">
       <header className="app-header">
@@ -232,8 +261,11 @@ function App() {
         <section className="feature-grid">
           <article className="feature-card">
             <h2>Spelare</h2>
-            <p>Spelarrundor och statistik blir nästa del i webbgränssnittet.</p>
-            <button className="primary-button" disabled>
+            <p>Visa tillgängliga spelare och deras statistik.</p>
+            <button
+              className="primary-button"
+              onClick={() => void openPlayers()}
+            >
               Öppna spelare
             </button>
           </article>
@@ -249,6 +281,14 @@ function App() {
       </main>
     </div>
   )
+}
+
+function apiErrorText(error: unknown, defaultMessage: string): string {
+  if (error instanceof ApiError && error.statusCode === 401) {
+    return 'Din inloggning är inte längre giltig. Logga ut och logga in igen.'
+  }
+
+  return defaultMessage
 }
 
 export default App

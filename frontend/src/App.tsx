@@ -1,4 +1,5 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import type React from 'react'
 import './App.css'
 import {
   ApiError,
@@ -13,6 +14,7 @@ import {
   getPublicCourses,
   getPublicCourseLayouts ,
   getPublicLayoutHoles,
+  changePassword,
   login,
   type CourseApiResponse,
   type MeResponse,
@@ -36,6 +38,7 @@ import {
   PublicLayoutDetailPage,
   PublicLayoutsPage,
 } from './components/PublicCoursesPages'
+import SettingsPage from './components/SettingsPage'
 
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
@@ -55,6 +58,7 @@ type AppView =
   | 'public_courses'
   | 'public_layouts'
   | 'public_layout_detail'
+  | 'settings'
 
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
@@ -116,6 +120,13 @@ function App() {
   const [publicLayoutHoles, setPublicLayoutHoles] =
     useState<PublicLayoutHoleApiResponse[]>([])
 
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null)
+
   const [isLoadingPublicData, setIsLoadingPublicData] = useState(false)
   const [publicDataError, setPublicDataError] = useState<string | null>(null)
 
@@ -149,7 +160,7 @@ function App() {
     void validateStoredToken()
   }, [])
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     setLoginError(null)
@@ -195,6 +206,58 @@ function App() {
       } else {
         setAuthStatus('server_unavailable')
       }
+    }
+  }
+
+  function openSettings() {
+    setSettingsError(null)
+    setSettingsSuccess(null)
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setView('settings')
+  }
+
+  async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (newPassword.trim() === '' || currentPassword.trim() === '') {
+      setSettingsError('Fyll i både nuvarande och nytt lösenord.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setSettingsError('De nya lösenorden matchar inte.')
+      return
+    }
+
+    if (!storedToken) {
+      setSettingsError('Du måste logga in igen.')
+      return
+    }
+
+    setIsChangingPassword(true)
+    setSettingsError(null)
+    setSettingsSuccess(null)
+
+    try {
+      await changePassword(storedToken, currentPassword, newPassword)
+      setSettingsSuccess('Lösenordet har ändrats.')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setUser((existing) =>
+        existing
+          ? {
+              ...existing,
+              must_change_password: 0,
+            }
+          : existing,
+      )
+    } catch (error) {
+      setSettingsError(apiErrorText(error, 'Kunde inte byta lösenord.'))
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -574,17 +637,26 @@ function App() {
 
         <div className="user-controls">
           <span>Inloggad som <strong>{user?.username}</strong></span>
+          <button className="secondary-button small-button" onClick={openSettings}>
+            Inställningar
+          </button>
           <button className="secondary-button small-button" onClick={handleLogout}>
             Logga ut
           </button>
         </div>
       </header>
 
+      {user && flagIsTrue(user.must_change_password) && view !== 'settings' && (
+        <div className="warning-card warning-banner">
+          Ditt konto kräver att du ändrar lösenord. <button className="link-button" type="button" onClick={openSettings}>Gå till inställningar</button>
+        </div>
+      )}
+
       {view === 'home' && (
       <main className="home-content">
         {user && flagIsTrue(user.must_change_password) && (
           <section className="warning-card">
-            Du använder ett tillfälligt lösenord. Funktion för lösenordsbyte läggs till senare.
+            Ditt konto kräver att du ändra lösenord. Du kan <button className="link-button" type="button" onClick={openSettings}>gå till inställningar</button> för att byta det.
           </section>
         )}
 
@@ -627,6 +699,22 @@ function App() {
           </article>
         </section>
       </main>
+      )}
+      {view === 'settings' && user && (
+        <SettingsPage
+          username={user.username}
+          currentPassword={currentPassword}
+          newPassword={newPassword}
+          confirmPassword={confirmPassword}
+          isSubmitting={isChangingPassword}
+          errorMessage={settingsError}
+          successMessage={settingsSuccess}
+          onBack={() => setView('home')}
+          onCurrentPasswordChange={setCurrentPassword}
+          onNewPasswordChange={setNewPassword}
+          onConfirmPasswordChange={setConfirmPassword}
+          onSubmit={handleChangePassword}
+        />
       )}
       {view === 'players' && (
         <PlayersPage

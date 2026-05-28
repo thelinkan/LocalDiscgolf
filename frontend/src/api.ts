@@ -146,6 +146,34 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return JSON.parse(responseBody) as T
 }
 
+async function parseVoidResponse(response: Response): Promise<void> {
+  const responseBody = await response.text()
+
+  if (!response.ok) {
+    throw new ApiError(response.status, responseBody)
+  }
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/me/password`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
+
+  return parseVoidResponse(response)
+}
+
 export async function login(
   username: string,
   password: string,

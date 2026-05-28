@@ -160,6 +160,55 @@
   color: #604c10;
 }
 
+.warning-banner {
+  width: min(1100px, calc(100% - 40px));
+  margin: 0 auto 24px;
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  color: #34733b;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.settings-card {
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #e2e9e1;
+  padding: 28px;
+  max-width: 640px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.success-message {
+  color: #1f5a30;
+  background: #ecf8ee;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.note-card {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 18px;
+  padding: 20px 24px;
+  color: #4f5d4f;
+}
+
 .welcome-card {
   background: #ffffff;
   border-radius: 18px;

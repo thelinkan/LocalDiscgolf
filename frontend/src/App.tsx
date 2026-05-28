@@ -3,13 +3,22 @@ import './App.css'
 import {
   ApiError,
   flagIsTrue,
+  getCourses,
   getMe,
+  getPlayerHoleStats,
+  getPlayerLayoutStats,
   getUserPlayers,
   login,
+  type CourseApiResponse,
   type MeResponse,
+  type PlayerHoleStatsApiResponse,
+  type PlayerLayoutStatsApiResponse,
   type UserPlayersResponse,
 } from './api'
-import PlayersPage from './components/PlayersPage'
+import PlayersPage, {
+  type SelectablePlayer,
+} from './components/PlayersPage'
+import PlayerStatsPage from './components/PlayerStatsPage'
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
 
@@ -36,6 +45,21 @@ function App() {
   const [playersData, setPlayersData] = useState<UserPlayersResponse | null>(null)
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false)
   const [playersError, setPlayersError] = useState<string | null>(null)
+
+  const [selectedPlayer, setSelectedPlayer] =
+    useState<SelectablePlayer | null>(null)
+
+  const [courses, setCourses] = useState<CourseApiResponse[]>([])
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null)
+
+  const [layoutStats, setLayoutStats] =
+    useState<PlayerLayoutStatsApiResponse[]>([])
+
+  const [holeStats, setHoleStats] =
+    useState<PlayerHoleStatsApiResponse[]>([])
+
+  const [isLoadingStats, setIsLoadingStats] = useState(false)
+  const [statsError, setStatsError] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -123,6 +147,15 @@ function App() {
     setUsername('')
     setPassword('')
     setLoginError(null)
+
+    setPlayersData(null)
+    setSelectedPlayer(null)
+    setCourses([])
+    setSelectedCourseId(null)
+    setLayoutStats([])
+    setHoleStats([])
+    setStatsError(null)
+    setView('home')
     setAuthStatus('logged_out')
   }
 
@@ -229,6 +262,58 @@ function App() {
     }
   }
 
+  async function openPlayerStats(player: SelectablePlayer) {
+    if (!storedToken) {
+      return
+    }
+
+    setSelectedPlayer(player)
+    setSelectedCourseId(null)
+    setView('player_stats')
+    setIsLoadingStats(true)
+    setStatsError(null)
+
+    try {
+      const [courseData, layoutData, holeData] = await Promise.all([
+        getCourses(storedToken),
+        getPlayerLayoutStats(storedToken, player.id, null),
+        getPlayerHoleStats(storedToken, player.id, null),
+      ])
+
+      setCourses(courseData)
+      setLayoutStats(layoutData)
+      setHoleStats(holeData)
+    } catch (error) {
+      setStatsError(apiErrorText(error, 'Kunde inte hämta statistik.'))
+    } finally {
+      setIsLoadingStats(false)
+    }
+  }
+
+  async function changeStatsCourse(courseId: number | null) {
+    if (!storedToken || !selectedPlayer) {
+      return
+    }
+
+    setSelectedCourseId(courseId)
+    setIsLoadingStats(true)
+    setStatsError(null)
+
+    try {
+      const [layoutData, holeData] = await Promise.all([
+        getPlayerLayoutStats(storedToken, selectedPlayer.id, courseId),
+        getPlayerHoleStats(storedToken, selectedPlayer.id, courseId),
+      ])
+
+      setLayoutStats(layoutData)
+      setHoleStats(holeData)
+    } catch (error) {
+      setStatsError(apiErrorText(error, 'Kunde inte hämta statistik.'))
+    } finally {
+      setIsLoadingStats(false)
+    }
+  }
+
   return (
     <div className="page">
       <header className="app-header">
@@ -288,9 +373,21 @@ function App() {
           isLoading={isLoadingPlayers}
           error={playersError}
           onBack={() => setView('home')}
-          onSelectPlayer={() => {
-            // Statistikvyn kopplas in i nästa steg.
-          }}
+          onSelectPlayer={(player) => void openPlayerStats(player)}
+        />
+      )}
+
+      {view === 'player_stats' && selectedPlayer && (
+        <PlayerStatsPage
+          player={selectedPlayer}
+          courses={courses}
+          selectedCourseId={selectedCourseId}
+          layoutStats={layoutStats}
+          holeStats={holeStats}
+          isLoading={isLoadingStats}
+          error={statsError}
+          onBack={() => setView('players')}
+          onCourseSelected={(courseId) => void changeStatsCourse(courseId)}
         />
       )}
     </div>

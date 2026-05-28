@@ -17,6 +17,14 @@ export interface MeResponse {
   must_change_password: ApiFlag
 }
 
+export interface CourseApiResponse {
+  id: number
+  name: string
+  is_active: number
+  hole_count: number
+  layout_count: number
+}
+
 export class ApiError extends Error {
   statusCode: number
   responseBody: string

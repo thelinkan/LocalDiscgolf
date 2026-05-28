@@ -9,6 +9,7 @@ import {
   type MeResponse,
   type UserPlayersResponse,
 } from './api'
+import PlayersPage from './components/PlayersPage'
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
 
@@ -244,6 +245,7 @@ function App() {
         </div>
       </header>
 
+      {view === 'home' && (
       <main className="home-content">
         {user && flagIsTrue(user.must_change_password) && (
           <section className="warning-card">
@@ -279,6 +281,18 @@ function App() {
           </article>
         </section>
       </main>
+      )}
+      {view === 'players' && (
+        <PlayersPage
+          data={playersData}
+          isLoading={isLoadingPlayers}
+          error={playersError}
+          onBack={() => setView('home')}
+          onSelectPlayer={() => {
+            // Statistikvyn kopplas in i nästa steg.
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -25,6 +25,70 @@ export interface CourseApiResponse {
   layout_count: number
 }
 
+export interface PlayerRoundApiResponse {
+  id: number
+  course_name: string
+  layout_name: string | null
+  started_at: string
+  ended_at: string | null
+  status: string
+  approval_required: number
+  approval_state: string
+  total_throws: number
+  total_par: number
+  played_holes: number
+  layout_hole_count: number
+  player_count: number
+}
+
+export interface RoundDetailHoleApiResponse {
+  id: number
+  session_player_id: number
+  sequence_number: number
+  course_id: number
+  hole_id: number
+  hole_variant_id: number | null
+  hole_number_snapshot: number
+  hole_name_snapshot: string | null
+  tee_name_snapshot: string | null
+  basket_name_snapshot: string | null
+  length_snapshot_meters: number
+  par_snapshot: number
+  throws_count: number | null
+  is_completed: number
+}
+
+export interface RoundDetailPlayerApiResponse {
+  id: number
+  play_session_id: number
+  player_id: number
+  player_name: string
+  layout_id: number | null
+  layout_name: string | null
+  display_name_snapshot: string | null
+  start_order: number
+  added_by_user_id: number
+  added_by_username: string
+  approval_required: number
+  approval_state: string
+  approved_by_user_id: number | null
+  approved_by_username: string | null
+  approved_at: string | null
+  holes: RoundDetailHoleApiResponse[]
+}
+
+export interface RoundDetailApiResponse {
+  id: number
+  course_id: number
+  course_name: string
+  created_by_user_id: number
+  created_by_username: string
+  started_at: string
+  ended_at: string | null
+  status: string
+  players: RoundDetailPlayerApiResponse[]
+}
+
 export class ApiError extends Error {
   statusCode: number
   responseBody: string
@@ -216,4 +280,36 @@ export async function getPlayerHoleStats(
   )
 
   return parseResponse<PlayerHoleStatsApiResponse[]>(response)
+}
+
+export async function getPlayerRounds(
+  token: string,
+  playerId: number,
+): Promise<PlayerRoundApiResponse[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/players/${playerId}/rounds`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<PlayerRoundApiResponse[]>(response)
+}
+
+export async function getRoundDetail(
+  token: string,
+  roundId: number,
+): Promise<RoundDetailApiResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/rounds/${roundId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<RoundDetailApiResponse>(response)
 }

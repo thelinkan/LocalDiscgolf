@@ -15,6 +15,7 @@ interface PlayerStatsPageProps {
   error: string | null
   onBack: () => void
   onCourseSelected: (courseId: number | null) => void
+  onRoundsClick: () => void
 }
 
 const decimalOne = new Intl.NumberFormat('sv-SE', {
@@ -45,21 +46,30 @@ export default function PlayerStatsPage({
   isLoading,
   error,
   onBack,
+  onRoundsClick,
   onCourseSelected,
 }: PlayerStatsPageProps) {
   return (
     <main className="content-page">
-      <div className="page-toolbar">
+      <div className="page-toolbar player-page-toolbar">
         <button className="secondary-button" onClick={onBack}>
           Tillbaka
         </button>
 
-        <div>
+        <div className="player-page-heading">
           <h2>{player.name}</h2>
           <p className="muted-text">{player.roundCount} rundor</p>
         </div>
-      </div>
 
+        <div className="player-view-buttons">
+          <button className="secondary-button" onClick={onRoundsClick}>
+            Rundor
+          </button>
+          <button className="primary-button">
+            Statistik
+          </button>
+        </div>
+      </div>
       <section className="filter-card">
         <label htmlFor="course-filter">Bana</label>
         <select

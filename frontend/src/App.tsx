@@ -7,18 +7,24 @@ import {
   getMe,
   getPlayerHoleStats,
   getPlayerLayoutStats,
+  getPlayerRounds,
+  getRoundDetail,
   getUserPlayers,
   login,
   type CourseApiResponse,
   type MeResponse,
   type PlayerHoleStatsApiResponse,
   type PlayerLayoutStatsApiResponse,
+  type PlayerRoundApiResponse,
+  type RoundDetailApiResponse,
   type UserPlayersResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
 } from './components/PlayersPage'
 import PlayerStatsPage from './components/PlayerStatsPage'
+import PlayerRoundsPage from './components/PlayerRoundsPage'
+import RoundDetailPage from './components/RoundDetailPage'
 
 const TOKEN_STORAGE_KEY = 'discgolf_access_token'
 
@@ -28,7 +34,12 @@ type AuthStatus =
   | 'logged_in'
   | 'server_unavailable'
 
-  type AppView = 'home' | 'players' | 'player_stats'
+type AppView =
+  | 'home'
+  | 'players'
+  | 'player_stats'
+  | 'player_rounds'
+  | 'round_detail'
 
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
@@ -60,6 +71,18 @@ function App() {
 
   const [isLoadingStats, setIsLoadingStats] = useState(false)
   const [statsError, setStatsError] = useState<string | null>(null)
+
+  const [playerRounds, setPlayerRounds] =
+    useState<PlayerRoundApiResponse[]>([])
+
+  const [isLoadingRounds, setIsLoadingRounds] = useState(false)
+  const [roundsError, setRoundsError] = useState<string | null>(null)
+
+  const [selectedRound, setSelectedRound] =
+    useState<RoundDetailApiResponse | null>(null)
+
+  const [isLoadingRoundDetail, setIsLoadingRoundDetail] = useState(false)
+  const [roundDetailError, setRoundDetailError] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -155,6 +178,12 @@ function App() {
     setLayoutStats([])
     setHoleStats([])
     setStatsError(null)
+
+    setPlayerRounds([])
+    setRoundsError(null)
+    setSelectedRound(null)
+    setRoundDetailError(null)
+
     setView('home')
     setAuthStatus('logged_out')
   }
@@ -290,6 +319,46 @@ function App() {
     }
   }
 
+  async function openPlayerRounds(player: SelectablePlayer) {
+    if (!storedToken) {
+      return
+    }
+
+    setSelectedPlayer(player)
+    setView('player_rounds')
+    setIsLoadingRounds(true)
+    setRoundsError(null)
+
+    try {
+      const rounds = await getPlayerRounds(storedToken, player.id)
+      setPlayerRounds(rounds)
+    } catch (error) {
+      setRoundsError(apiErrorText(error, 'Kunde inte hämta rundor.'))
+    } finally {
+      setIsLoadingRounds(false)
+    }
+  }
+
+  async function openRoundDetail(roundId: number) {
+    if (!storedToken) {
+      return
+    }
+
+    setView('round_detail')
+    setSelectedRound(null)
+    setIsLoadingRoundDetail(true)
+    setRoundDetailError(null)
+
+    try {
+      const detail = await getRoundDetail(storedToken, roundId)
+      setSelectedRound(detail)
+    } catch (error) {
+      setRoundDetailError(apiErrorText(error, 'Kunde inte hämta runddetalj.'))
+    } finally {
+      setIsLoadingRoundDetail(false)
+    }
+  }
+
   async function changeStatsCourse(courseId: number | null) {
     if (!storedToken || !selectedPlayer) {
       return
@@ -373,7 +442,7 @@ function App() {
           isLoading={isLoadingPlayers}
           error={playersError}
           onBack={() => setView('home')}
-          onSelectPlayer={(player) => void openPlayerStats(player)}
+          onSelectPlayer={(player) => void openPlayerRounds(player)}
         />
       )}
 
@@ -387,9 +456,32 @@ function App() {
           isLoading={isLoadingStats}
           error={statsError}
           onBack={() => setView('players')}
+          onRoundsClick={() => void openPlayerRounds(selectedPlayer)}
           onCourseSelected={(courseId) => void changeStatsCourse(courseId)}
         />
       )}
+
+      {view === 'player_rounds' && selectedPlayer && (
+        <PlayerRoundsPage
+          player={selectedPlayer}
+          rounds={playerRounds}
+          isLoading={isLoadingRounds}
+          error={roundsError}
+          onBack={() => setView('players')}
+          onStatsClick={() => void openPlayerStats(selectedPlayer)}
+          onRoundClick={(roundId) => void openRoundDetail(roundId)}
+        />
+      )}
+
+      {view === 'round_detail' && (
+        <RoundDetailPage
+          round={selectedRound}
+          isLoading={isLoadingRoundDetail}
+          error={roundDetailError}
+          onBack={() => setView('player_rounds')}
+        />
+      )}
+
     </div>
   )
 }

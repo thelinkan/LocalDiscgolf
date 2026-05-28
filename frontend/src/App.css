@@ -409,3 +409,209 @@
     text-align: left;
   }
 }
+
+.player-page-toolbar {
+  align-items: center;
+}
+
+.player-page-heading {
+  flex: 1;
+}
+
+.player-page-heading h2 {
+  margin: 0 0 3px;
+}
+
+.player-page-heading p {
+  margin: 0;
+}
+
+.player-view-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.round-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.round-card {
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+  padding: 18px 20px;
+  text-align: left;
+  width: 100%;
+}
+
+.round-card:hover {
+  background: #f7faf6;
+  border-color: #ccdacb;
+}
+
+.round-card-header {
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.round-card h3 {
+  font-size: 1.05rem;
+  margin: 0 0 5px;
+}
+
+.round-card p {
+  color: #536252;
+  margin: 5px 0;
+}
+
+.round-result {
+  color: #172117;
+  font-size: 1.15rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.round-status {
+  font-size: 0.93rem;
+}
+
+.round-detail-header,
+.round-summary-card {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.round-detail-header h3,
+.round-summary-card h3,
+.scorecard-section h3 {
+  margin: 0 0 12px;
+}
+
+.round-detail-header p {
+  color: #536252;
+  margin: 6px 0;
+}
+
+.round-layout-name {
+  font-size: 1.03rem;
+  font-weight: 600;
+}
+
+.round-player-summary {
+  align-items: center;
+  border-top: 1px solid #edf2ed;
+  display: flex;
+  font-size: 1.04rem;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+
+.round-player-summary:first-of-type {
+  border-top: none;
+}
+
+.scorecard-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scorecard-scroll {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  overflow-x: auto;
+  padding: 12px;
+}
+
+.scorecard-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.scorecard-table th,
+.scorecard-table td {
+  font-size: 0.95rem;
+  min-width: 52px;
+  padding: 7px 8px;
+  text-align: center;
+}
+
+.scorecard-table th:first-child,
+.scorecard-table td:first-child {
+  min-width: 130px;
+  text-align: left;
+}
+
+.scorecard-table thead {
+  color: #536252;
+}
+
+.scorecard-table tbody tr {
+  border-top: 1px solid #edf2ed;
+}
+
+.scorecard-player-name {
+  font-weight: 600;
+}
+
+.score-badge {
+  align-items: center;
+  display: inline-flex;
+  font-weight: 700;
+  height: 31px;
+  justify-content: center;
+  min-width: 31px;
+  padding: 0 6px;
+}
+
+.score-under {
+  background: #81c784;
+  border-radius: 999px;
+}
+
+.score-bogey {
+  background: #ffccbc;
+  border-radius: 3px;
+}
+
+.score-double {
+  background: #ff8a65;
+  border-radius: 3px;
+}
+
+.score-even,
+.score-empty {
+  background: transparent;
+}
+
+.back-button {
+  width: fit-content;
+}
+
+@media (max-width: 650px) {
+  .player-page-toolbar {
+    align-items: stretch;
+  }
+
+  .player-view-buttons {
+    width: 100%;
+  }
+
+  .player-view-buttons button {
+    flex: 1;
+  }
+
+  .round-card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+}

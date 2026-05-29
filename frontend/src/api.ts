@@ -156,16 +156,18 @@ async function parseVoidResponse(response: Response): Promise<void> {
 
 export async function changePassword(
   token: string,
+  username: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/me/password`, {
+  const response = await fetch(`${API_BASE_URL}/change-password`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
+      username,
       current_password: currentPassword,
       new_password: newPassword,
     }),

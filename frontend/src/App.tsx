@@ -241,7 +241,12 @@ function App() {
     setSettingsSuccess(null)
 
     try {
-      await changePassword(storedToken, currentPassword, newPassword)
+      await changePassword(
+        storedToken,
+        user?.username ?? '',
+        currentPassword,
+        newPassword,
+      )
       setSettingsSuccess('Lösenordet har ändrats.')
       setCurrentPassword('')
       setNewPassword('')

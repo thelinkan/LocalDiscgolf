@@ -161,7 +161,7 @@ export async function changePassword(
   newPassword: string,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/change-password`, {
-    method: 'PATCH',
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,

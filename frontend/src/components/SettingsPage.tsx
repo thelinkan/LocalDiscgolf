@@ -46,12 +46,6 @@ export default function SettingsPage({
       </div>
 
       <section className="settings-card">
-        {successMessage && (
-          <div className="success-card settings-success-banner">
-            {successMessage}
-          </div>
-        )}
-
         <form className="settings-form" onSubmit={onSubmit}>
           <label>
             Nuvarande lösenord
@@ -90,6 +84,7 @@ export default function SettingsPage({
           {!passwordsMatch && confirmPassword !== '' && (
             <p className="error-message">Lösenorden matchar inte.</p>
           )}
+          {successMessage && <p className="success-message">{successMessage}</p>}
 
           <div className="settings-actions">
             <button

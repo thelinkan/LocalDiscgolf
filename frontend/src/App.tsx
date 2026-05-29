@@ -659,6 +659,12 @@ function App() {
 
       {view === 'home' && (
       <main className="home-content">
+        {user && flagIsTrue(user.must_change_password) && (
+          <section className="warning-card">
+            Ditt konto kräver att du ändra lösenord. Du kan <button className="link-button" type="button" onClick={openSettings}>gå till inställningar</button> för att byta det.
+          </section>
+        )}
+
         <section className="welcome-card">
           <h2>Välkommen, {user?.username}</h2>
           <p>
@@ -825,23 +831,8 @@ function PublicSiteHeader({
 }
 
 function apiErrorText(error: unknown, defaultMessage: string): string {
-  if (error instanceof ApiError) {
-    if (error.statusCode === 401) {
-      return 'Din inloggning är inte längre giltig. Logga ut och logga in igen.'
-    }
-
-    if (error.responseBody.trim() !== '') {
-      try {
-        const parsed = JSON.parse(error.responseBody)
-        if (parsed && typeof parsed.message === 'string' && parsed.message.trim() !== '') {
-          return parsed.message
-        }
-      } catch {
-        // ignore parse errors and fall through to raw text
-      }
-
-      return error.responseBody
-    }
+  if (error instanceof ApiError && error.statusCode === 401) {
+    return 'Din inloggning är inte längre giltig. Logga ut och logga in igen.'
   }
 
   return defaultMessage

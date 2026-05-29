@@ -201,19 +201,6 @@
   padding: 10px 12px;
 }
 
-.settings-success-banner {
-  margin-bottom: 18px;
-  font-weight: 600;
-}
-
-.success-card {
-  background: #ecf8ee;
-  border: 1px solid #c7e8d1;
-  color: #1f5a30;
-  border-radius: 12px;
-  padding: 14px 16px;
-}
-
 .note-card {
   background: #ffffff;
   border: 1px solid #e2e9e1;

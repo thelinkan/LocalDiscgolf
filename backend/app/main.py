@@ -1,21 +1,26 @@
 from datetime import datetime
-from typing import Literal
 from collections import defaultdict
 
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel, Field
-
-from sqlalchemy import text
-from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
-from app.auth import create_access_token, get_current_user, require_admin
-
 import bcrypt
+from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import text
+
+from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
+from app.auth import create_access_token, get_current_user
+
+
 app = FastAPI(title="LocalDiscgolf API")
 
 
 # =========================
 # Pydantic-modeller
 # =========================
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -24,248 +29,70 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     must_change_password: bool
-    
-class RoundPlayerCreate(BaseModel):
-    player_id: int
-    layout_id: int
-
-
-class CreateRoundRequest(BaseModel):
-    created_by_username: str
-    course_id: int
-    started_at: datetime
-    players: list[RoundPlayerCreate]
-
-
-class HoleScoreUpdate(BaseModel):
-    player_id: int
-    throws_count: int | None = None
-
-
-class UpdateHoleRequest(BaseModel):
-    updated_by_username: str
-    scores: list[HoleScoreUpdate]
-
-
-class CompleteRoundRequest(BaseModel):
-    completed_by_username: str
-    ended_at: datetime
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 
 class ChangePasswordRequest(BaseModel):
-    username: str
+    # username behålls valfritt för kompatibilitet med den befintliga Android-klienten.
+    # Backend använder alltid den autentiserade användaren.
+    username: str | None = None
     current_password: str
     new_password: str = Field(min_length=8)
 
+
+class RoundPlayerCreate(BaseModel):
+    player_id: int = Field(gt=0)
+    layout_id: int = Field(gt=0)
+
+
 class CreateRoundRequest(BaseModel):
-    course_id: int
+    course_id: int = Field(gt=0)
     started_at: datetime
-    players: list[RoundPlayerCreate]
+    players: list[RoundPlayerCreate] = Field(min_length=1)
+
+
+class HoleScoreUpdate(BaseModel):
+    player_id: int = Field(gt=0)
+    throws_count: int | None = Field(default=None, ge=1)
+
 
 class UpdateHoleRequest(BaseModel):
-    scores: list[HoleScoreUpdate]
- 
+    scores: list[HoleScoreUpdate] = Field(min_length=1)
+
+
 class CompleteRoundRequest(BaseModel):
     ended_at: datetime
-    
+
+
 # =========================
-# Hjälpfunktioner
+# Databashjälp för transaktioner
 # =========================
-
-def tx_fetch_one(conn, sql: str, params: dict | None = None) -> dict | None:
-    result = conn.execute(text(sql), params or {})
-    row = result.first()
-    return dict(row._mapping) if row else None
-
-
-def tx_fetch_all(conn, sql: str, params: dict | None = None) -> list[dict]:
-    result = conn.execute(text(sql), params or {})
-    return [dict(row._mapping) for row in result]
-
 
 def tx_execute_write(conn, sql: str, params: dict | None = None) -> int:
     result = conn.execute(text(sql), params or {})
-    try:
-        return result.lastrowid or 0
-    except Exception:
-        return 0
-        
-def get_round_progress_summary(round_id: int, up_to_sequence_number: int) -> list[dict]:
-    sql = """
-        SELECT
-            sp.id AS session_player_id,
-            sp.player_id,
-            p.name AS player_name,
-            sp.start_order,
-            COALESCE(SUM(CASE
-                WHEN sph.sequence_number <= :up_to_sequence_number
-                 AND sph.throws_count IS NOT NULL
-                THEN sph.throws_count
-                ELSE 0
-            END), 0) AS total_throws,
-            COALESCE(SUM(CASE
-                WHEN sph.sequence_number <= :up_to_sequence_number
-                 AND sph.throws_count IS NOT NULL
-                THEN sph.throws_count - sph.par_snapshot
-                ELSE 0
-            END), 0) AS relative_to_par,
-            COALESCE(SUM(CASE
-                WHEN sph.sequence_number <= :up_to_sequence_number
-                 AND sph.throws_count IS NOT NULL
-                THEN 1
-                ELSE 0
-            END), 0) AS played_holes
-        FROM session_player sp
-        INNER JOIN player p ON p.id = sp.player_id
-        LEFT JOIN session_player_hole sph ON sph.session_player_id = sp.id
-        WHERE sp.play_session_id = :round_id
-        GROUP BY sp.id, sp.player_id, p.name, sp.start_order
-        ORDER BY sp.start_order
-    """
-    return fetch_all(
-        sql,
-        {
-            "round_id": round_id,
-            "up_to_sequence_number": up_to_sequence_number,
-        },
-    )
- 
-def build_round_hole_response(round_id: int, sequence_number: int) -> dict:
-    rnd = get_round(round_id)
+    return int(result.lastrowid or 0)
 
-    players = fetch_all(
-        """
-        SELECT
-            sp.id AS session_player_id,
-            sp.player_id,
-            p.name AS player_name,
-            sp.layout_id,
-            l.name AS layout_name,
-            sp.start_order,
-            sp.approval_required,
-            sp.approval_state
-        FROM session_player sp
-        INNER JOIN player p ON p.id = sp.player_id
-        LEFT JOIN layout l ON l.id = sp.layout_id
-        WHERE sp.play_session_id = :round_id
-        ORDER BY sp.start_order
-        """,
-        {"round_id": round_id},
-    )
 
-    holes = fetch_all(
-        """
-        SELECT
-            sp.id AS session_player_id,
-            sp.player_id,
-            p.name AS player_name,
-            sp.start_order,
-            sph.sequence_number,
-            sph.hole_id,
-            sph.hole_variant_id,
-            sph.hole_number_snapshot,
-            sph.hole_name_snapshot,
-            sph.tee_name_snapshot,
-            sph.basket_name_snapshot,
-            sph.length_snapshot_meters,
-            sph.par_snapshot,
-            sph.throws_count,
-            sph.is_completed
-        FROM session_player_hole sph
-        INNER JOIN session_player sp ON sp.id = sph.session_player_id
-        INNER JOIN player p ON p.id = sp.player_id
-        WHERE sp.play_session_id = :round_id
-        ORDER BY sph.sequence_number, sp.start_order
-        """,
-        {"round_id": round_id},
-    )
+# =========================
+# Hämtning och behörighet
+# =========================
 
-    if not holes:
-        raise HTTPException(status_code=400, detail="Round has no holes")
-
-    holes_by_sequence: dict[int, list[dict]] = {}
-    for row in holes:
-        holes_by_sequence.setdefault(row["sequence_number"], []).append(row)
-
-    if sequence_number not in holes_by_sequence:
-        raise HTTPException(status_code=404, detail="Hole not found in round")
-
-    ordered_sequences = sorted(holes_by_sequence.keys())
-
-    completed_sequences = [
-        seq
-        for seq in ordered_sequences
-        if all(row["throws_count"] is not None for row in holes_by_sequence[seq])
-    ]
-
-    current_hole_rows = holes_by_sequence[sequence_number]
-    current_hole_info = current_hole_rows[0]
-
-    progress_summary = get_round_progress_summary(
-        round_id=round_id,
-        up_to_sequence_number=sequence_number - 1,
-    )
-
-    return {
-        "round": {
-            "id": rnd["id"],
-            "course_id": rnd["course_id"],
-            "course_name": rnd["course_name"],
-            "created_by_user_id": rnd["created_by_user_id"],
-            "created_by_username": rnd["created_by_username"],
-            "started_at": rnd["started_at"],
-            "ended_at": rnd["ended_at"],
-            "status": rnd["status"],
-        },
-        "progress": {
-            "total_holes": len(ordered_sequences),
-            "completed_holes": len(completed_sequences),
-            "current_sequence_number": sequence_number,
-            "is_finished_by_scores": len(completed_sequences) == len(ordered_sequences),
-        },
-        "players": players,
-        "summary_to_previous_hole": progress_summary,
-        "current_hole": {
-            "sequence_number": current_hole_info["sequence_number"],
-            "hole_id": current_hole_info["hole_id"],
-            "hole_variant_id": current_hole_info["hole_variant_id"],
-            "hole_number": current_hole_info["hole_number_snapshot"],
-            "hole_name": current_hole_info["hole_name_snapshot"],
-            "tee_name": current_hole_info["tee_name_snapshot"],
-            "basket_name": current_hole_info["basket_name_snapshot"],
-            "length_meters": current_hole_info["length_snapshot_meters"],
-            "par_value": current_hole_info["par_snapshot"],
-            "scores": [
-                {
-                    "session_player_id": row["session_player_id"],
-                    "player_id": row["player_id"],
-                    "player_name": row["player_name"],
-                    "start_order": row["start_order"],
-                    "throws_count": row["throws_count"],
-                    "is_completed": bool(row["is_completed"]),
-                }
-                for row in current_hole_rows
-            ],
-        },
-    }
- 
-def get_user_by_username(username: str) -> dict:
+def get_user_with_password_by_id(user_id: int) -> dict:
     user = fetch_one(
         """
-        SELECT id, username, role, is_active
+        SELECT
+            id,
+            username,
+            password_hash,
+            role,
+            is_active,
+            must_change_password
         FROM user_account
-        WHERE username = :username
+        WHERE id = :user_id
         """,
-        {"username": username},
+        {"user_id": user_id},
     )
-    if not user:
-        raise HTTPException(status_code=404, detail=f"User not found: {username}")
-    if not user["is_active"]:
-        raise HTTPException(status_code=400, detail=f"User is inactive: {username}")
+    if not user or not user["is_active"]:
+        raise HTTPException(status_code=401, detail="User is not active")
     return user
 
 
@@ -312,14 +139,14 @@ def get_layout(layout_id: int, course_id: int) -> dict:
     )
     if not layout:
         raise HTTPException(status_code=404, detail=f"Layout not found: {layout_id}")
-    if layout["course_id"] != course_id:
+    if int(layout["course_id"]) != int(course_id):
         raise HTTPException(status_code=400, detail="Layout does not belong to course")
     if not layout["is_active"]:
         raise HTTPException(status_code=400, detail="Layout is inactive")
     return layout
 
 
-def get_layout_holes(layout_id: int) -> list[dict]:
+def get_layout_holes_for_round(layout_id: int) -> list[dict]:
     holes = fetch_all(
         """
         SELECT
@@ -334,16 +161,18 @@ def get_layout_holes(layout_id: int) -> list[dict]:
             hv.par_value
         FROM layout_hole lh
         INNER JOIN hole h ON h.id = lh.hole_id
-        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        INNER JOIN hole_variant hv ON hv.id = lh.hole_variant_id
         LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
         LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
         WHERE lh.layout_id = :layout_id
+          AND h.is_active = 1
+          AND hv.is_active = 1
         ORDER BY lh.sequence_number
         """,
         {"layout_id": layout_id},
     )
     if not holes:
-        raise HTTPException(status_code=400, detail="Layout has no holes")
+        raise HTTPException(status_code=400, detail="Layout has no active holes")
     return holes
 
 
@@ -363,21 +192,37 @@ def get_permission_level(source_user_id: int, target_player_id: int) -> str:
     return row["permission_level"] if row else "none"
 
 
+def can_access_player(current_user: dict, player: dict) -> bool:
+    if current_user["role"] == "admin":
+        return True
+
+    current_user_id = int(current_user["id"])
+
+    if bool(player["is_guest"]):
+        return int(player["created_by_user_id"]) == current_user_id
+
+    if player["owner_user_id"] is not None:
+        if int(player["owner_user_id"]) == current_user_id:
+            return True
+
+    return get_permission_level(current_user_id, player["id"]) in (
+        "auto_approve",
+        "propose",
+    )
+
+
 def determine_approval(source_user_id: int, player: dict) -> tuple[bool, str, int | None]:
-    print("DEBUG determine_approval:", source_user_id, type(source_user_id), player)
     source_user_id = int(source_user_id)
+    owner_user_id = (
+        int(player["owner_user_id"]) if player["owner_user_id"] is not None else None
+    )
+    created_by_user_id = (
+        int(player["created_by_user_id"])
+        if player["created_by_user_id"] is not None
+        else None
+    )
 
-    owner_user_id = player.get("owner_user_id")
-    created_by_user_id = player.get("created_by_user_id")
-    is_guest = bool(player.get("is_guest"))
-
-    if owner_user_id is not None:
-        owner_user_id = int(owner_user_id)
-
-    if created_by_user_id is not None:
-        created_by_user_id = int(created_by_user_id)
-
-    if is_guest:
+    if bool(player["is_guest"]):
         if created_by_user_id == source_user_id:
             return False, "approved", source_user_id
         raise HTTPException(
@@ -400,6 +245,7 @@ def determine_approval(source_user_id: int, player: dict) -> tuple[bool, str, in
         status_code=403,
         detail=f"User is not allowed to score for player {player['name']}",
     )
+
 
 def get_round(round_id: int) -> dict:
     rnd = fetch_one(
@@ -425,6 +271,50 @@ def get_round(round_id: int) -> dict:
     return rnd
 
 
+def require_round_editor(round_id: int, current_user: dict) -> dict:
+    rnd = get_round(round_id)
+    if (
+        current_user["role"] != "admin"
+        and int(current_user["id"]) != int(rnd["created_by_user_id"])
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the scorer of the round can edit it",
+        )
+    return rnd
+
+
+def require_round_viewer(round_id: int, current_user: dict) -> dict:
+    rnd = get_round(round_id)
+
+    if current_user["role"] == "admin":
+        return rnd
+
+    if int(current_user["id"]) == int(rnd["created_by_user_id"]):
+        return rnd
+
+    players = fetch_all(
+        """
+        SELECT
+            p.id,
+            p.name,
+            p.owner_user_id,
+            p.created_by_user_id,
+            p.is_guest,
+            p.is_active
+        FROM session_player sp
+        INNER JOIN player p ON p.id = sp.player_id
+        WHERE sp.play_session_id = :round_id
+        """,
+        {"round_id": round_id},
+    )
+
+    if any(can_access_player(current_user, player) for player in players):
+        return rnd
+
+    raise HTTPException(status_code=403, detail="Not allowed to view this round")
+
+
 def get_session_player(round_id: int, player_id: int) -> dict | None:
     return fetch_one(
         """
@@ -447,409 +337,194 @@ def get_session_player(round_id: int, player_id: int) -> dict | None:
         {"round_id": round_id, "player_id": player_id},
     )
 
-def get_user_with_password(username: str) -> dict:
-    user = fetch_one(
-        """
-        SELECT
-            id,
-            username,
-            password_hash,
-            role,
-            is_active,
-            must_change_password
-        FROM user_account
-        WHERE username = :username
-        """,
-        {"username": username},
+def require_round_owner_or_admin(current_user: dict, round_row: dict) -> None:
+    if current_user["role"] == "admin":
+        return
+
+    if int(current_user["id"]) == int(round_row["created_by_user_id"]):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Only the round creator or admin can do this",
     )
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not user["is_active"]:
-        raise HTTPException(status_code=400, detail="User is inactive")
-    return user
-
-def can_access_player(current_user: dict, player: dict) -> bool:
-    if bool(player["is_guest"]):
-        return player["created_by_user_id"] == current_user["id"]
-
-    if player["owner_user_id"] == current_user["id"]:
-        return True
-
-    permission_level = get_permission_level(current_user["id"], player["id"])
-    return permission_level in ("auto_approve", "propose")
-
-def relative_text_value(throws_count: float, par_value: float) -> float:
-    return round(throws_count - par_value, 2)
-
-
-def calculate_streak(results_newest_first: list[dict]) -> int:
-    """
-    Positiv svit: antal par eller bättre i rad från senaste spelade hålet.
-    Negativ svit: antal bogey eller sämre i rad från senaste spelade hålet.
-    """
-    if not results_newest_first:
-        return 0
-
-    latest_relative = (
-        int(results_newest_first[0]["throws_count"])
-        - int(results_newest_first[0]["par_value"])
-    )
-
-    if latest_relative <= 0:
-        streak = 0
-        for result in results_newest_first:
-            relative = int(result["throws_count"]) - int(result["par_value"])
-            if relative <= 0:
-                streak += 1
-            else:
-                break
-        return streak
-
-    streak = 0
-    for result in results_newest_first:
-        relative = int(result["throws_count"]) - int(result["par_value"])
-        if relative > 0:
-            streak += 1
-        else:
-            break
-
-    return -streak
-    
-def verify_password(plain_password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        password_hash.encode("utf-8"),
-    )
-
-
-def hash_password(plain_password: str) -> str:
-    return bcrypt.hashpw(
-        plain_password.encode("utf-8"),
-        bcrypt.gensalt()
-    ).decode("utf-8")
 
 # =========================
-# Befintliga GET-endpoints
+# Round response-hjälpare
 # =========================
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
-
-
-@app.get("/courses")
-def get_courses() -> list[dict]:
-    sql = """
-        SELECT
-            c.id,
-            c.name,
-            c.is_active,
-            (
-                SELECT COUNT(*)
-                FROM hole h
-                WHERE h.course_id = c.id
-                  AND h.is_active = 1
-            ) AS hole_count,
-            (
-                SELECT COUNT(*)
-                FROM layout l
-                WHERE l.course_id = c.id
-                  AND l.is_active = 1
-            ) AS layout_count
-        FROM course c
-        WHERE c.is_active = 1
-        ORDER BY c.name
-    """
-    return fetch_all(sql)
-
-
-@app.get("/courses/{course_id}")
-def get_course_endpoint(course_id: int) -> dict:
-    return get_course(course_id)
-
-
-@app.get("/courses/{course_id}/layouts")
-def get_course_layouts(
-  course_id: int,
-  include_inactive: bool = False,
-) -> list[dict]:
-    course = fetch_one(
-        """
-        SELECT id, name, is_active
-        FROM course
-        WHERE id = :course_id
-        """,
-        {"course_id": course_id},
-    )
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    active_filter = "" if include_inactive else "AND l.is_active = 1"
-
-    sql = """
-        SELECT
-            l.id,
-            l.course_id,
-            c.name AS course_name,
-            l.name,
-            l.description,
-            l.is_active,
-            COUNT(lh.id) AS hole_count,
-            COALESCE(SUM(hv.par_value), 0) AS total_par,
-            COALESCE(SUM(hv.length_meters), 0) AS total_length_meters
-        FROM layout l
-        INNER JOIN course c ON c.id = l.course_id
-        LEFT JOIN layout_hole lh ON lh.layout_id = l.id
-        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
-        WHERE l.course_id = :course_id
-          AND (:include_inactive = 1 OR l.is_active = 1)
-        GROUP BY
-            l.id,
-            l.course_id,
-            c.name,
-            l.name,
-            l.description,
-            l.is_active
-        ORDER BY l.name
-    """
-    return fetch_all(sql, {"course_id": course_id,
-            "include_inactive": 1 if include_inactive else 0,})
-
-
-@app.get("/courses/{course_id}/holes")
-def get_course_holes(course_id: int) -> list[dict]:
-    sql = """
-        SELECT
-            h.id,
-            h.course_id,
-            h.hole_number,
-            h.name,
-            h.length_meters,
-            h.par_value,
-            h.notes,
-            h.is_active
-        FROM hole h
-        WHERE h.course_id = :course_id
-          AND h.is_active = 1
-        ORDER BY h.hole_number
-    """
-    return fetch_all(sql, {"course_id": course_id})
-
-@app.get("/layouts/{layout_id}")
-def get_layout_endpoint(layout_id: int) -> dict:
-    layout = fetch_one(
+def get_round_progress_summary(round_id: int, up_to_sequence_number: int) -> list[dict]:
+    return fetch_all(
         """
         SELECT
-            l.id,
-            l.course_id,
-            c.name AS course_name,
-            l.name,
-            l.description,
-            l.is_active
-        FROM layout l
-        INNER JOIN course c ON c.id = l.course_id
-        WHERE l.id = :layout_id
+            sp.id AS session_player_id,
+            sp.player_id,
+            p.name AS player_name,
+            sp.start_order,
+            COALESCE(SUM(CASE
+                WHEN sph.sequence_number <= :up_to_sequence_number
+                 AND sph.throws_count IS NOT NULL
+                THEN sph.throws_count
+                ELSE 0
+            END), 0) AS total_throws,
+            COALESCE(SUM(CASE
+                WHEN sph.sequence_number <= :up_to_sequence_number
+                 AND sph.throws_count IS NOT NULL
+                THEN sph.throws_count - sph.par_snapshot
+                ELSE 0
+            END), 0) AS relative_to_par,
+            COALESCE(SUM(CASE
+                WHEN sph.sequence_number <= :up_to_sequence_number
+                 AND sph.throws_count IS NOT NULL
+                THEN 1
+                ELSE 0
+            END), 0) AS played_holes
+        FROM session_player sp
+        INNER JOIN player p ON p.id = sp.player_id
+        LEFT JOIN session_player_hole sph ON sph.session_player_id = sp.id
+        WHERE sp.play_session_id = :round_id
+        GROUP BY sp.id, sp.player_id, p.name, sp.start_order
+        ORDER BY sp.start_order
         """,
-        {"layout_id": layout_id},
+        {
+            "round_id": round_id,
+            "up_to_sequence_number": up_to_sequence_number,
+        },
     )
-    if not layout:
-        raise HTTPException(status_code=404, detail="Layout not found")
-    return layout
-    
-@app.get("/layouts/{layout_id}/holes")
-def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
-    layout = fetch_one(
+
+
+def get_round_players_for_response(round_id: int) -> list[dict]:
+    return fetch_all(
         """
-        SELECT id
-        FROM layout
-        WHERE id = :layout_id
+        SELECT
+            sp.id AS session_player_id,
+            sp.player_id,
+            p.name AS player_name,
+            sp.layout_id,
+            l.name AS layout_name,
+            sp.start_order,
+            sp.approval_required,
+            sp.approval_state
+        FROM session_player sp
+        INNER JOIN player p ON p.id = sp.player_id
+        LEFT JOIN layout l ON l.id = sp.layout_id
+        WHERE sp.play_session_id = :round_id
+        ORDER BY sp.start_order
         """,
-        {"layout_id": layout_id},
+        {"round_id": round_id},
     )
-    if not layout:
-        raise HTTPException(status_code=404, detail="Layout not found")
 
-    sql = """
+
+def get_round_hole_rows(round_id: int) -> list[dict]:
+    return fetch_all(
+        """
         SELECT
-            lh.sequence_number,
-            h.id AS hole_id,
-            h.hole_number,
-            h.name AS hole_name,
-            hv.id AS hole_variant_id,
-            ht.name AS tee_name,
-            hb.name AS basket_name,
-            hv.length_meters,
-            hv.par_value
-        FROM layout_hole lh
-        INNER JOIN hole h ON h.id = lh.hole_id
-        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
-        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
-        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
-        WHERE lh.layout_id = :layout_id
-        ORDER BY lh.sequence_number
-    """
-    return fetch_all(sql, {"layout_id": layout_id})    
-
-@app.get("/me")
-def get_me(current_user: dict = Depends(get_current_user)) -> dict:
-    return current_user
-
-@app.get("/me/in-progress-rounds")
-def get_my_in_progress_rounds(
-    current_user: dict = Depends(get_current_user),
-) -> list[dict]:
-    sql = """
-        SELECT
-            ps.id,
-            c.name AS course_name,
-            ps.started_at,
-            ps.status,
-            (
-                SELECT GROUP_CONCAT(DISTINCT l.name ORDER BY l.name SEPARATOR ', ')
-                FROM session_player sp2
-                INNER JOIN layout l ON l.id = sp2.layout_id
-                WHERE sp2.play_session_id = ps.id
-            ) AS layout_name,
-            (
-                SELECT COUNT(*)
-                FROM session_player sp3
-                WHERE sp3.play_session_id = ps.id
-            ) AS player_count
-        FROM play_session ps
-        INNER JOIN course c ON c.id = ps.course_id
-        WHERE ps.created_by_user_id = :user_id
-          AND ps.status = 'in_progress'
-        ORDER BY ps.started_at DESC, ps.id DESC
-    """
-
-    return fetch_all(sql, {"user_id": current_user["id"]})
-
-@app.get("/players")
-def get_players() -> list[dict]:
-    sql = """
-        SELECT
-            p.id,
-            p.name,
-            p.owner_user_id,
-            p.created_by_user_id,
-            p.is_guest,
-            p.is_active
-        FROM player p
-        WHERE p.is_active = 1
-        ORDER BY p.name
-    """
-    return fetch_all(sql)
+            sp.id AS session_player_id,
+            sp.player_id,
+            p.name AS player_name,
+            sp.start_order,
+            sph.sequence_number,
+            sph.hole_id,
+            sph.hole_variant_id,
+            sph.hole_number_snapshot,
+            sph.hole_name_snapshot,
+            sph.tee_name_snapshot,
+            sph.basket_name_snapshot,
+            sph.length_snapshot_meters,
+            sph.par_snapshot,
+            sph.throws_count,
+            sph.is_completed
+        FROM session_player_hole sph
+        INNER JOIN session_player sp ON sp.id = sph.session_player_id
+        INNER JOIN player p ON p.id = sp.player_id
+        WHERE sp.play_session_id = :round_id
+        ORDER BY sph.sequence_number, sp.start_order
+        """,
+        {"round_id": round_id},
+    )
 
 
-@app.post("/rounds")
-def create_round(
-    request: CreateRoundRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    get_course(request.course_id)
+def build_round_hole_response(round_id: int, sequence_number: int) -> dict:
+    rnd = get_round(round_id)
+    players = get_round_players_for_response(round_id)
+    holes = get_round_hole_rows(round_id)
 
-    if not request.players:
-        raise HTTPException(status_code=400, detail="Round must contain at least one player")
+    if not holes:
+        raise HTTPException(status_code=400, detail="Round has no holes")
 
-    def _create_round_tx(conn):
-        play_session_id = tx_execute_write(
-            conn,
-            """
-            INSERT INTO play_session (
-                course_id, created_by_user_id, started_at, ended_at, status
-            )
-            VALUES (
-                :course_id, :created_by_user_id, :started_at, NULL, 'in_progress'
-            )
-            """,
-            {
-                "course_id": request.course_id,
-                "created_by_user_id": current_user["id"],
-                "started_at": request.started_at,
-            },
-        )
+    holes_by_sequence: dict[int, list[dict]] = defaultdict(list)
+    for row in holes:
+        holes_by_sequence[int(row["sequence_number"])].append(row)
 
-        seen_player_ids = set()
+    if sequence_number not in holes_by_sequence:
+        raise HTTPException(status_code=404, detail="Hole not found in round")
 
-        for idx, round_player in enumerate(request.players, start=1):
-            if round_player.player_id in seen_player_ids:
-                raise HTTPException(status_code=400, detail="Duplicate player in round")
-            seen_player_ids.add(round_player.player_id)
+    ordered_sequences = sorted(holes_by_sequence)
+    completed_sequences = [
+        sequence
+        for sequence in ordered_sequences
+        if all(row["throws_count"] is not None for row in holes_by_sequence[sequence])
+    ]
 
-            player = get_player(round_player.player_id)
-            layout = get_layout(round_player.layout_id, request.course_id)
-            layout_holes = get_layout_holes(round_player.layout_id)
+    current_hole_rows = holes_by_sequence[sequence_number]
+    current_hole_info = current_hole_rows[0]
 
-            approval_required, approval_state, approved_by_user_id = determine_approval(
-                source_user_id=current_user["id"],
-                player=player,
-            )
-
-            session_player_id = tx_execute_write(
-                conn,
-                """
-                INSERT INTO session_player (
-                    play_session_id, player_id, layout_id, display_name_snapshot,
-                    start_order, added_by_user_id, approval_required, approval_state,
-                    approved_by_user_id, approved_at
-                )
-                VALUES (
-                    :play_session_id, :player_id, :layout_id, :display_name_snapshot,
-                    :start_order, :added_by_user_id, :approval_required, :approval_state,
-                    :approved_by_user_id, :approved_at
-                )
-                """,
+    return {
+        "round": rnd,
+        "progress": {
+            "total_holes": len(ordered_sequences),
+            "completed_holes": len(completed_sequences),
+            "current_sequence_number": sequence_number,
+            "is_finished_by_scores": len(completed_sequences) == len(ordered_sequences),
+        },
+        "players": players,
+        "summary_to_previous_hole": get_round_progress_summary(
+            round_id=round_id,
+            up_to_sequence_number=sequence_number - 1,
+        ),
+        "current_hole": {
+            "sequence_number": current_hole_info["sequence_number"],
+            "hole_id": current_hole_info["hole_id"],
+            "hole_variant_id": current_hole_info["hole_variant_id"],
+            "hole_number": current_hole_info["hole_number_snapshot"],
+            "hole_name": current_hole_info["hole_name_snapshot"],
+            "tee_name": current_hole_info["tee_name_snapshot"],
+            "basket_name": current_hole_info["basket_name_snapshot"],
+            "length_meters": current_hole_info["length_snapshot_meters"],
+            "par_value": current_hole_info["par_snapshot"],
+            "scores": [
                 {
-                    "play_session_id": play_session_id,
-                    "player_id": player["id"],
-                    "layout_id": layout["id"],
-                    "display_name_snapshot": player["name"],
-                    "start_order": idx,
-                    "added_by_user_id": current_user["id"],
-                    "approval_required": approval_required,
-                    "approval_state": approval_state,
-                    "approved_by_user_id": approved_by_user_id,
-                    "approved_at": request.started_at if approval_state == "approved" else None,
-                },
-            )
+                    "session_player_id": row["session_player_id"],
+                    "player_id": row["player_id"],
+                    "player_name": row["player_name"],
+                    "start_order": row["start_order"],
+                    "throws_count": row["throws_count"],
+                    "is_completed": bool(row["is_completed"]),
+                }
+                for row in current_hole_rows
+            ],
+        },
+    }
 
-            for hole in layout_holes:
-                tx_execute_write(
-                    conn,
-                    """
-                    INSERT INTO session_player_hole (
-                        session_player_id, sequence_number, course_id, hole_id, hole_variant_id,
-                        hole_number_snapshot, hole_name_snapshot, tee_name_snapshot, basket_name_snapshot,
-                        length_snapshot_meters, par_snapshot, throws_count, is_completed
-                    )
-                    VALUES (
-                        :session_player_id, :sequence_number, :course_id, :hole_id, :hole_variant_id,
-                        :hole_number_snapshot, :hole_name_snapshot, :tee_name_snapshot, :basket_name_snapshot,
-                        :length_snapshot_meters, :par_snapshot, NULL, 0
-                    )
-                    """,
-                    {
-                        "session_player_id": session_player_id,
-                        "sequence_number": hole["sequence_number"],
-                        "course_id": request.course_id,
-                        "hole_id": hole["hole_id"],
-                        "hole_variant_id": hole["hole_variant_id"],
-                        "hole_number_snapshot": hole["hole_number"],
-                        "hole_name_snapshot": hole["hole_name"],
-                        "tee_name_snapshot": hole["tee_name"],
-                        "basket_name_snapshot": hole["basket_name"],
-                        "length_snapshot_meters": hole["length_meters"],
-                        "par_snapshot": hole["par_value"],
-                    },
-                )
 
-        return play_session_id
+def get_resume_sequence_number(round_id: int) -> int:
+    holes = get_round_hole_rows(round_id)
+    if not holes:
+        raise HTTPException(status_code=400, detail="Round has no holes")
 
-    play_session_id = run_in_transaction(_create_round_tx)
-    return get_round_endpoint(int(play_session_id))
+    holes_by_sequence: dict[int, list[dict]] = defaultdict(list)
+    for row in holes:
+        holes_by_sequence[int(row["sequence_number"])].append(row)
 
-@app.get("/rounds/{round_id}")
-def get_round_endpoint(round_id: int) -> dict:
+    for sequence_number in sorted(holes_by_sequence):
+        rows = holes_by_sequence[sequence_number]
+        if not all(row["throws_count"] is not None for row in rows):
+            return sequence_number
+
+    return max(holes_by_sequence)
+
+
+def build_round_detail_response(round_id: int) -> dict:
     round_row = get_round(round_id)
 
     players = fetch_all(
@@ -906,154 +581,343 @@ def get_round_endpoint(round_id: int) -> dict:
         {"round_id": round_id},
     )
 
-    holes_by_session_player = {}
+    holes_by_session_player: dict[int, list[dict]] = defaultdict(list)
     for hole in holes:
-        holes_by_session_player.setdefault(hole["session_player_id"], []).append(hole)
+        holes_by_session_player[int(hole["session_player_id"])].append(hole)
 
     for player in players:
-        player["holes"] = holes_by_session_player.get(player["id"], [])
+        player["holes"] = holes_by_session_player.get(int(player["id"]), [])
 
     round_row["players"] = players
     return round_row
 
-@app.get("/rounds/{round_id}/current")
-def get_current_round_state(round_id: int) -> dict:
-    rnd = get_round(round_id)
 
-    players = fetch_all(
-        """
-        SELECT
-            sp.id AS session_player_id,
-            sp.player_id,
-            p.name AS player_name,
-            sp.layout_id,
-            l.name AS layout_name,
-            sp.start_order,
-            sp.approval_required,
-            sp.approval_state
-        FROM session_player sp
-        INNER JOIN player p ON p.id = sp.player_id
-        LEFT JOIN layout l ON l.id = sp.layout_id
-        WHERE sp.play_session_id = :round_id
-        ORDER BY sp.start_order
-        """,
-        {"round_id": round_id},
+# =========================
+# Statistik-hjälpare
+# =========================
+
+def calculate_streak(results_newest_first: list[dict]) -> int:
+    """
+    Positiv svit: antal par eller bättre i rad från senaste spelade hålet.
+    Negativ svit: antal bogey eller sämre i rad från senaste spelade hålet.
+    """
+    if not results_newest_first:
+        return 0
+
+    latest_relative = (
+        int(results_newest_first[0]["throws_count"])
+        - int(results_newest_first[0]["par_value"])
     )
 
-    holes = fetch_all(
-        """
-        SELECT
-            sp.id AS session_player_id,
-            sp.player_id,
-            p.name AS player_name,
-            sp.start_order,
-            sph.sequence_number,
-            sph.hole_id,
-            sph.hole_variant_id,
-            sph.hole_number_snapshot,
-            sph.hole_name_snapshot,
-            sph.tee_name_snapshot,
-            sph.basket_name_snapshot,
-            sph.length_snapshot_meters,
-            sph.par_snapshot,
-            sph.throws_count,
-            sph.is_completed
-        FROM session_player_hole sph
-        INNER JOIN session_player sp ON sp.id = sph.session_player_id
-        INNER JOIN player p ON p.id = sp.player_id
-        WHERE sp.play_session_id = :round_id
-        ORDER BY sph.sequence_number, sp.start_order
-        """,
-        {"round_id": round_id},
-    )
+    counts_non_positive = latest_relative <= 0
+    streak = 0
 
-    if not holes:
-        raise HTTPException(status_code=400, detail="Round has no holes")
-
-    # Gruppindela per hålnummer i layoutsekvensen
-    holes_by_sequence = {}
-    for row in holes:
-        holes_by_sequence.setdefault(row["sequence_number"], []).append(row)
-
-    ordered_sequences = sorted(holes_by_sequence.keys())
-
-    # Ett hål räknas som helt klart när alla spelare på det hålet har throws_count
-    completed_sequences = []
-    next_sequence_number = None
-
-    for seq in ordered_sequences:
-        seq_rows = holes_by_sequence[seq]
-        if all(r["throws_count"] is not None for r in seq_rows):
-            completed_sequences.append(seq)
-        else:
-            next_sequence_number = seq
+    for result in results_newest_first:
+        relative = int(result["throws_count"]) - int(result["par_value"])
+        is_non_positive = relative <= 0
+        if is_non_positive != counts_non_positive:
             break
+        streak += 1
 
-    if next_sequence_number is None:
-        # Allt ifyllt
-        next_sequence_number = ordered_sequences[-1]
+    return streak if counts_non_positive else -streak
 
-    current_hole_rows = holes_by_sequence[next_sequence_number]
-    current_hole_info = current_hole_rows[0]
 
-    progress_summary = get_round_progress_summary(
-        round_id=round_id,
-        up_to_sequence_number=max(completed_sequences) if completed_sequences else 0,
+# =========================
+# Lösenord
+# =========================
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        password_hash.encode("utf-8"),
+    )
+
+
+def hash_password(plain_password: str) -> str:
+    return bcrypt.hashpw(
+        plain_password.encode("utf-8"),
+        bcrypt.gensalt(),
+    ).decode("utf-8")
+
+
+# =========================
+# Publika GET-endpoints
+# =========================
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.get("/courses")
+def get_courses() -> list[dict]:
+    return fetch_all(
+        """
+        SELECT
+            c.id,
+            c.name,
+            c.is_active,
+            (
+                SELECT COUNT(*)
+                FROM hole h
+                WHERE h.course_id = c.id
+                  AND h.is_active = 1
+            ) AS hole_count,
+            (
+                SELECT COUNT(*)
+                FROM layout l
+                WHERE l.course_id = c.id
+                  AND l.is_active = 1
+            ) AS layout_count
+        FROM course c
+        WHERE c.is_active = 1
+        ORDER BY c.name
+        """
+    )
+
+
+@app.get("/courses/{course_id}")
+def get_course_endpoint(course_id: int) -> dict:
+    return get_course(course_id)
+
+
+@app.get("/courses/{course_id}/layouts")
+def get_course_layouts(course_id: int, include_inactive: bool = False) -> list[dict]:
+    get_course(course_id)
+
+    return fetch_all(
+        """
+        SELECT
+            l.id,
+            l.course_id,
+            c.name AS course_name,
+            l.name,
+            l.description,
+            l.is_active,
+            COUNT(lh.id) AS hole_count,
+            COALESCE(SUM(hv.par_value), 0) AS total_par,
+            COALESCE(SUM(hv.length_meters), 0) AS total_length_meters
+        FROM layout l
+        INNER JOIN course c ON c.id = l.course_id
+        LEFT JOIN layout_hole lh ON lh.layout_id = l.id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        WHERE l.course_id = :course_id
+          AND (:include_inactive = 1 OR l.is_active = 1)
+        GROUP BY
+            l.id,
+            l.course_id,
+            c.name,
+            l.name,
+            l.description,
+            l.is_active
+        ORDER BY l.is_active DESC, l.name
+        """,
+        {
+            "course_id": course_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
+    )
+
+
+@app.get("/courses/{course_id}/holes")
+def get_course_holes(course_id: int) -> list[dict]:
+    get_course(course_id)
+    return fetch_all(
+        """
+        SELECT
+            h.id,
+            h.course_id,
+            h.hole_number,
+            h.name,
+            h.length_meters,
+            h.par_value,
+            h.notes,
+            h.is_active
+        FROM hole h
+        WHERE h.course_id = :course_id
+          AND h.is_active = 1
+        ORDER BY h.hole_number
+        """,
+        {"course_id": course_id},
+    )
+
+
+@app.get("/layouts/{layout_id}")
+def get_layout_endpoint(layout_id: int) -> dict:
+    layout = fetch_one(
+        """
+        SELECT
+            l.id,
+            l.course_id,
+            c.name AS course_name,
+            l.name,
+            l.description,
+            l.is_active
+        FROM layout l
+        INNER JOIN course c ON c.id = l.course_id
+        WHERE l.id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    return layout
+
+
+@app.get("/layouts/{layout_id}/holes")
+def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
+    if not fetch_one("SELECT id FROM layout WHERE id = :layout_id", {"layout_id": layout_id}):
+        raise HTTPException(status_code=404, detail="Layout not found")
+
+    return fetch_all(
+        """
+        SELECT
+            lh.sequence_number,
+            h.id AS hole_id,
+            h.hole_number,
+            h.name AS hole_name,
+            hv.id AS hole_variant_id,
+            ht.name AS tee_name,
+            hb.name AS basket_name,
+            hv.length_meters,
+            hv.par_value
+        FROM layout_hole lh
+        INNER JOIN hole h ON h.id = lh.hole_id
+        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
+        WHERE lh.layout_id = :layout_id
+        ORDER BY lh.sequence_number
+        """,
+        {"layout_id": layout_id},
+    )
+
+
+# =========================
+# Autentisering och användare
+# =========================
+
+@app.post("/login", response_model=LoginResponse)
+def login(request: LoginRequest) -> LoginResponse:
+    user = fetch_one(
+        """
+        SELECT
+            id,
+            username,
+            password_hash,
+            role,
+            is_active,
+            must_change_password
+        FROM user_account
+        WHERE username = :username
+        """,
+        {"username": request.username},
+    )
+
+    if (
+        not user
+        or not user["is_active"]
+        or not verify_password(request.password, user["password_hash"])
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token = create_access_token(
+        user_id=user["id"],
+        username=user["username"],
+        role=user["role"],
+    )
+
+    return LoginResponse(
+        access_token=token,
+        user_id=user["id"],
+        username=user["username"],
+        role=user["role"],
+        must_change_password=bool(user["must_change_password"]),
+    )
+
+
+@app.get("/me")
+def get_me(current_user: dict = Depends(get_current_user)) -> dict:
+    return current_user
+
+
+@app.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if request.username and request.username != current_user["username"]:
+        raise HTTPException(status_code=403, detail="Cannot change another user's password")
+
+    user = get_user_with_password_by_id(current_user["id"])
+
+    if not verify_password(request.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if request.current_password == request.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be different from current password",
+        )
+
+    execute_write(
+        """
+        UPDATE user_account
+        SET
+            password_hash = :password_hash,
+            must_change_password = 0
+        WHERE id = :user_id
+        """,
+        {
+            "password_hash": hash_password(request.new_password),
+            "user_id": user["id"],
+        },
     )
 
     return {
-        "round": {
-            "id": rnd["id"],
-            "course_id": rnd["course_id"],
-            "course_name": rnd["course_name"],
-            "created_by_user_id": rnd["created_by_user_id"],
-            "created_by_username": rnd["created_by_username"],
-            "started_at": rnd["started_at"],
-            "ended_at": rnd["ended_at"],
-            "status": rnd["status"],
-        },
-        "progress": {
-            "total_holes": len(ordered_sequences),
-            "completed_holes": len(completed_sequences),
-            "current_sequence_number": next_sequence_number,
-            "is_finished_by_scores": len(completed_sequences) == len(ordered_sequences),
-        },
-        "players": players,
-        "summary_to_previous_hole": progress_summary,
-        "current_hole": {
-            "sequence_number": current_hole_info["sequence_number"],
-            "hole_id": current_hole_info["hole_id"],
-            "hole_variant_id": current_hole_info["hole_variant_id"],
-            "hole_number": current_hole_info["hole_number_snapshot"],
-            "hole_name": current_hole_info["hole_name_snapshot"],
-            "tee_name": current_hole_info["tee_name_snapshot"],
-            "basket_name": current_hole_info["basket_name_snapshot"],
-            "length_meters": current_hole_info["length_snapshot_meters"],
-            "par_value": current_hole_info["par_snapshot"],
-            "scores": [
-                {
-                    "session_player_id": row["session_player_id"],
-                    "player_id": row["player_id"],
-                    "player_name": row["player_name"],
-                    "start_order": row["start_order"],
-                    "throws_count": row["throws_count"],
-                    "is_completed": bool(row["is_completed"]),
-                }
-                for row in current_hole_rows
-            ],
-        },
+        "message": "Password changed successfully",
+        "username": user["username"],
+        "must_change_password": False,
     }
 
-@app.get("/rounds/{round_id}/holes/{sequence_number}")
-def get_round_hole(
-    round_id: int,
-    sequence_number: int,
+
+@app.get("/me/in-progress-rounds")
+def get_my_in_progress_rounds(
     current_user: dict = Depends(get_current_user),
-) -> dict:
-    return build_round_hole_response(round_id, sequence_number)
+) -> list[dict]:
+    return fetch_all(
+        """
+        SELECT
+            ps.id,
+            c.name AS course_name,
+            ps.started_at,
+            ps.status,
+            (
+                SELECT GROUP_CONCAT(DISTINCT l.name ORDER BY l.name SEPARATOR ', ')
+                FROM session_player sp2
+                INNER JOIN layout l ON l.id = sp2.layout_id
+                WHERE sp2.play_session_id = ps.id
+            ) AS layout_name,
+            (
+                SELECT COUNT(*)
+                FROM session_player sp3
+                WHERE sp3.play_session_id = ps.id
+            ) AS player_count
+        FROM play_session ps
+        INNER JOIN course c ON c.id = ps.course_id
+        WHERE ps.created_by_user_id = :user_id
+          AND ps.status = 'in_progress'
+        ORDER BY ps.started_at DESC, ps.id DESC
+        """,
+        {"user_id": current_user["id"]},
+    )
+
 
 @app.get("/users/{username}/players")
-def get_user_players(username: str, current_user: dict = Depends(get_current_user)) -> dict:
+def get_user_players(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     if current_user["username"] != username and current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not allowed to view this user's players")
 
@@ -1068,8 +932,19 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    round_count_sql = """
+        (
+            SELECT COUNT(*)
+            FROM session_player sp
+            INNER JOIN play_session ps ON ps.id = sp.play_session_id
+            WHERE sp.player_id = p.id
+              AND ps.status = 'completed'
+              AND sp.approval_state = 'approved'
+        ) AS round_count
+    """
+
     own_player = fetch_one(
-        """
+        f"""
         SELECT
             p.id,
             p.name,
@@ -1077,14 +952,7 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.created_by_user_id,
             p.is_guest,
             p.is_active,
-            (
-                SELECT COUNT(*)
-                FROM session_player sp
-                INNER JOIN play_session ps ON ps.id = sp.play_session_id
-                WHERE sp.player_id = p.id
-                  AND ps.status = 'completed'
-                  AND sp.approval_state = 'approved'
-            ) AS round_count
+            {round_count_sql}
         FROM player p
         WHERE p.owner_user_id = :user_id
           AND p.is_active = 1
@@ -1093,7 +961,7 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
     )
 
     guest_players = fetch_all(
-        """
+        f"""
         SELECT
             p.id,
             p.name,
@@ -1101,14 +969,7 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.created_by_user_id,
             p.is_guest,
             p.is_active,
-            (
-                SELECT COUNT(*)
-                FROM session_player sp
-                INNER JOIN play_session ps ON ps.id = sp.play_session_id
-                WHERE sp.player_id = p.id
-                  AND ps.status = 'completed'
-                  AND sp.approval_state = 'approved'
-            ) AS round_count
+            {round_count_sql}
         FROM player p
         WHERE p.created_by_user_id = :user_id
           AND p.is_guest = 1
@@ -1119,7 +980,7 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
     )
 
     scoreable_players = fetch_all(
-        """
+        f"""
         SELECT
             p.id,
             p.name,
@@ -1128,14 +989,7 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
             p.is_guest,
             p.is_active,
             upp.permission_level,
-            (
-                SELECT COUNT(*)
-                FROM session_player sp
-                INNER JOIN play_session ps ON ps.id = sp.play_session_id
-                WHERE sp.player_id = p.id
-                  AND ps.status = 'completed'
-                  AND sp.approval_state = 'approved'
-            ) AS round_count
+            {round_count_sql}
         FROM user_player_permission upp
         INNER JOIN player p ON p.id = upp.target_player_id
         WHERE upp.source_user_id = :user_id
@@ -1152,7 +1006,300 @@ def get_user_players(username: str, current_user: dict = Depends(get_current_use
         "guest_players": guest_players,
         "scoreable_players": scoreable_players,
     }
-    
+
+
+@app.get("/players")
+def get_players(current_user: dict = Depends(get_current_user)) -> list[dict]:
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    return fetch_all(
+        """
+        SELECT
+            p.id,
+            p.name,
+            p.owner_user_id,
+            p.created_by_user_id,
+            p.is_guest,
+            p.is_active
+        FROM player p
+        WHERE p.is_active = 1
+        ORDER BY p.name
+        """
+    )
+
+
+# =========================
+# Rundor
+# =========================
+
+@app.post("/rounds")
+def create_round(
+    request: CreateRoundRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    get_course(request.course_id)
+
+    player_ids = [player.player_id for player in request.players]
+    if len(set(player_ids)) != len(player_ids):
+        raise HTTPException(status_code=400, detail="Duplicate player in round")
+
+    layout_ids = {player.layout_id for player in request.players}
+    if len(layout_ids) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Different layouts per player are not yet supported in round display",
+        )
+
+    prepared_players: list[dict] = []
+
+    # All validering görs före första INSERT, så att en misslyckad spelare
+    # inte håller en påbörjad skrivtransaktion öppen.
+    for start_order, round_player in enumerate(request.players, start=1):
+        player = get_player(round_player.player_id)
+        layout = get_layout(round_player.layout_id, request.course_id)
+        layout_holes = get_layout_holes_for_round(round_player.layout_id)
+        approval_required, approval_state, approved_by_user_id = determine_approval(
+            current_user["id"],
+            player,
+        )
+
+        prepared_players.append(
+            {
+                "player": player,
+                "layout": layout,
+                "layout_holes": layout_holes,
+                "start_order": start_order,
+                "approval_required": approval_required,
+                "approval_state": approval_state,
+                "approved_by_user_id": approved_by_user_id,
+            }
+        )
+
+    def _create_round_tx(conn):
+        play_session_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO play_session (
+                course_id, created_by_user_id, started_at, ended_at, status
+            )
+            VALUES (
+                :course_id, :created_by_user_id, :started_at, NULL, 'in_progress'
+            )
+            """,
+            {
+                "course_id": request.course_id,
+                "created_by_user_id": current_user["id"],
+                "started_at": request.started_at,
+            },
+        )
+
+        for prepared in prepared_players:
+            player = prepared["player"]
+            layout = prepared["layout"]
+
+            session_player_id = tx_execute_write(
+                conn,
+                """
+                INSERT INTO session_player (
+                    play_session_id, player_id, layout_id, display_name_snapshot,
+                    start_order, added_by_user_id, approval_required, approval_state,
+                    approved_by_user_id, approved_at
+                )
+                VALUES (
+                    :play_session_id, :player_id, :layout_id, :display_name_snapshot,
+                    :start_order, :added_by_user_id, :approval_required, :approval_state,
+                    :approved_by_user_id, :approved_at
+                )
+                """,
+                {
+                    "play_session_id": play_session_id,
+                    "player_id": player["id"],
+                    "layout_id": layout["id"],
+                    "display_name_snapshot": player["name"],
+                    "start_order": prepared["start_order"],
+                    "added_by_user_id": current_user["id"],
+                    "approval_required": prepared["approval_required"],
+                    "approval_state": prepared["approval_state"],
+                    "approved_by_user_id": prepared["approved_by_user_id"],
+                    "approved_at": (
+                        request.started_at
+                        if prepared["approval_state"] == "approved"
+                        else None
+                    ),
+                },
+            )
+
+            for hole in prepared["layout_holes"]:
+                tx_execute_write(
+                    conn,
+                    """
+                    INSERT INTO session_player_hole (
+                        session_player_id, sequence_number, course_id, hole_id, hole_variant_id,
+                        hole_number_snapshot, hole_name_snapshot, tee_name_snapshot, basket_name_snapshot,
+                        length_snapshot_meters, par_snapshot, throws_count, is_completed
+                    )
+                    VALUES (
+                        :session_player_id, :sequence_number, :course_id, :hole_id, :hole_variant_id,
+                        :hole_number_snapshot, :hole_name_snapshot, :tee_name_snapshot, :basket_name_snapshot,
+                        :length_snapshot_meters, :par_snapshot, NULL, 0
+                    )
+                    """,
+                    {
+                        "session_player_id": session_player_id,
+                        "sequence_number": hole["sequence_number"],
+                        "course_id": request.course_id,
+                        "hole_id": hole["hole_id"],
+                        "hole_variant_id": hole["hole_variant_id"],
+                        "hole_number_snapshot": hole["hole_number"],
+                        "hole_name_snapshot": hole["hole_name"],
+                        "tee_name_snapshot": hole["tee_name"],
+                        "basket_name_snapshot": hole["basket_name"],
+                        "length_snapshot_meters": hole["length_meters"],
+                        "par_snapshot": hole["par_value"],
+                    },
+                )
+
+        return play_session_id
+
+    play_session_id = int(run_in_transaction(_create_round_tx))
+    return build_round_detail_response(play_session_id)
+
+
+@app.get("/rounds/{round_id}")
+def get_round_endpoint(
+    round_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    require_round_viewer(round_id, current_user)
+    return build_round_detail_response(round_id)
+
+
+@app.get("/rounds/{round_id}/current")
+def get_current_round_state(
+    round_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    require_round_editor(round_id, current_user)
+    sequence_number = get_resume_sequence_number(round_id)
+    return build_round_hole_response(round_id, sequence_number)
+
+
+@app.get("/rounds/{round_id}/holes/{sequence_number}")
+def get_round_hole(
+    round_id: int,
+    sequence_number: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    require_round_editor(round_id, current_user)
+    return build_round_hole_response(round_id, sequence_number)
+
+
+@app.patch("/rounds/{round_id}/holes/{sequence_number}")
+def update_round_hole(
+    round_id: int,
+    sequence_number: int,
+    request: UpdateHoleRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    rnd = require_round_editor(round_id, current_user)
+
+    if rnd["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail="Only in-progress rounds can be updated")
+
+    player_ids = [score.player_id for score in request.scores]
+    if len(set(player_ids)) != len(player_ids):
+        raise HTTPException(status_code=400, detail="Duplicate player in score update")
+
+    prepared_updates: list[dict] = []
+    for score_update in request.scores:
+        session_player = get_session_player(round_id, score_update.player_id)
+        if not session_player:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Player {score_update.player_id} is not part of round {round_id}",
+            )
+
+        hole = fetch_one(
+            """
+            SELECT id
+            FROM session_player_hole
+            WHERE session_player_id = :session_player_id
+              AND sequence_number = :sequence_number
+            """,
+            {
+                "session_player_id": session_player["id"],
+                "sequence_number": sequence_number,
+            },
+        )
+        if not hole:
+            raise HTTPException(status_code=404, detail="Hole not found in round")
+
+        prepared_updates.append(
+            {
+                "session_player_id": session_player["id"],
+                "throws_count": score_update.throws_count,
+            }
+        )
+
+    def _update_hole_tx(conn):
+        for update in prepared_updates:
+            tx_execute_write(
+                conn,
+                """
+                UPDATE session_player_hole
+                SET
+                    throws_count = :throws_count,
+                    is_completed = :is_completed
+                WHERE session_player_id = :session_player_id
+                  AND sequence_number = :sequence_number
+                """,
+                {
+                    "throws_count": update["throws_count"],
+                    "is_completed": 1 if update["throws_count"] is not None else 0,
+                    "session_player_id": update["session_player_id"],
+                    "sequence_number": sequence_number,
+                },
+            )
+
+    run_in_transaction(_update_hole_tx)
+    return build_round_detail_response(round_id)
+
+
+@app.post("/rounds/{round_id}/complete")
+def complete_round(
+    round_id: int,
+    request: CompleteRoundRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    rnd = get_round(round_id)
+
+    if rnd["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail="Round is not in progress")
+
+    require_round_owner_or_admin(current_user, rnd)
+
+    execute_write(
+        """
+        UPDATE play_session
+        SET
+            status = 'completed',
+            ended_at = :ended_at
+        WHERE id = :round_id
+        """,
+        {
+            "round_id": round_id,
+            "ended_at": request.ended_at,
+        },
+    )
+
+    return get_round_endpoint(round_id, current_user)
+
+
+# =========================
+# Rundlistor och statistik
+# =========================
+
 @app.get("/players/{player_id}/rounds")
 def get_player_rounds(
     player_id: int,
@@ -1163,7 +1310,8 @@ def get_player_rounds(
     if not can_access_player(current_user, player):
         raise HTTPException(status_code=403, detail="Not allowed to view this player's rounds")
 
-    sql = """
+    return fetch_all(
+        """
         SELECT
             ps.id,
             c.name AS course_name,
@@ -1198,8 +1346,10 @@ def get_player_rounds(
             sp.approval_required,
             sp.approval_state
         ORDER BY ps.started_at DESC, ps.id DESC
-    """
-    return fetch_all(sql, {"player_id": player_id})    
+        """,
+        {"player_id": player_id},
+    )
+
 
 @app.get("/players/{player_id}/stats/holes")
 def get_player_hole_stats(
@@ -1215,15 +1365,8 @@ def get_player_hole_stats(
             detail="Not allowed to view this player's statistics",
         )
 
-    course_filter = ""
-    params: dict = {"player_id": player_id}
-
-    if course_id is not None:
-        course_filter = "AND ps.course_id = :course_id"
-        params["course_id"] = course_id
-
     rows = fetch_all(
-        f"""
+        """
         SELECT
             ps.id AS round_id,
             ps.started_at,
@@ -1239,24 +1382,20 @@ def get_player_hole_stats(
             sph.par_snapshot AS par_value,
             sph.throws_count
         FROM session_player sp
-        INNER JOIN play_session ps
-            ON ps.id = sp.play_session_id
-        INNER JOIN course c
-            ON c.id = ps.course_id
-        INNER JOIN session_player_hole sph
-            ON sph.session_player_id = sp.id
+        INNER JOIN play_session ps ON ps.id = sp.play_session_id
+        INNER JOIN course c ON c.id = ps.course_id
+        INNER JOIN session_player_hole sph ON sph.session_player_id = sp.id
         WHERE sp.player_id = :player_id
           AND ps.status = 'completed'
           AND sp.approval_state = 'approved'
           AND sph.throws_count IS NOT NULL
-          {course_filter}
+          AND (:course_id IS NULL OR ps.course_id = :course_id)
         ORDER BY ps.started_at DESC, ps.id DESC
         """,
-        params,
+        {"player_id": player_id, "course_id": course_id},
     )
 
     rows_by_hole: dict[tuple[int, int, int | None], list[dict]] = defaultdict(list)
-
     for row in rows:
         key = (
             int(row["course_id"]),
@@ -1266,22 +1405,14 @@ def get_player_hole_stats(
         rows_by_hole[key].append(row)
 
     result: list[dict] = []
-
     for hole_rows in rows_by_hole.values():
         newest_row = hole_rows[0]
         played_count = len(hole_rows)
-
         throws_values = [int(row["throws_count"]) for row in hole_rows]
         relative_values = [
             int(row["throws_count"]) - int(row["par_value"])
             for row in hole_rows
         ]
-
-        average_throws = round(sum(throws_values) / played_count, 2)
-
-        last_10_average_throws: float | None = None
-        if played_count >= 11:
-            last_10_average_throws = round(sum(throws_values[:10]) / 10, 2)
 
         result.append(
             {
@@ -1302,23 +1433,17 @@ def get_player_hole_stats(
                 "played_count": played_count,
                 "personal_best_throws": min(throws_values),
                 "streak": calculate_streak(hole_rows),
-                "average_throws": average_throws,
-                "last_10_average_throws": last_10_average_throws,
-                "birdie_or_better_count": sum(
-                    1 for relative in relative_values if relative <= -1
+                "average_throws": round(sum(throws_values) / played_count, 2),
+                "last_10_average_throws": (
+                    round(sum(throws_values[:10]) / 10, 2)
+                    if played_count >= 11
+                    else None
                 ),
-                "par_count": sum(
-                    1 for relative in relative_values if relative == 0
-                ),
-                "bogey_count": sum(
-                    1 for relative in relative_values if relative == 1
-                ),
-                "double_bogey_count": sum(
-                    1 for relative in relative_values if relative == 2
-                ),
-                "triple_bogey_or_worse_count": sum(
-                    1 for relative in relative_values if relative >= 3
-                ),
+                "birdie_or_better_count": sum(1 for value in relative_values if value <= -1),
+                "par_count": sum(1 for value in relative_values if value == 0),
+                "bogey_count": sum(1 for value in relative_values if value == 1),
+                "double_bogey_count": sum(1 for value in relative_values if value == 2),
+                "triple_bogey_or_worse_count": sum(1 for value in relative_values if value >= 3),
             }
         )
 
@@ -1331,7 +1456,8 @@ def get_player_hole_stats(
             row["basket_name"] or "",
         ),
     )
-    
+
+
 @app.get("/players/{player_id}/stats/layouts")
 def get_player_layout_stats(
     player_id: int,
@@ -1346,15 +1472,8 @@ def get_player_layout_stats(
             detail="Not allowed to view this player's statistics",
         )
 
-    course_filter = ""
-    params: dict = {"player_id": player_id}
-
-    if course_id is not None:
-        course_filter = "AND ps.course_id = :course_id"
-        params["course_id"] = course_id
-
     rows = fetch_all(
-        f"""
+        """
         SELECT
             ps.id AS round_id,
             ps.started_at,
@@ -1366,25 +1485,16 @@ def get_player_layout_stats(
             SUM(sph.par_snapshot) AS total_par,
             SUM(sph.length_snapshot_meters) AS total_length_meters,
             SUM(sph.throws_count) AS total_throws,
-            SUM(
-                CASE
-                    WHEN sph.throws_count IS NOT NULL THEN 1
-                    ELSE 0
-                END
-            ) AS played_holes
+            SUM(CASE WHEN sph.throws_count IS NOT NULL THEN 1 ELSE 0 END) AS played_holes
         FROM session_player sp
-        INNER JOIN play_session ps
-            ON ps.id = sp.play_session_id
-        INNER JOIN course c
-            ON c.id = ps.course_id
-        INNER JOIN layout l
-            ON l.id = sp.layout_id
-        INNER JOIN session_player_hole sph
-            ON sph.session_player_id = sp.id
+        INNER JOIN play_session ps ON ps.id = sp.play_session_id
+        INNER JOIN course c ON c.id = ps.course_id
+        INNER JOIN layout l ON l.id = sp.layout_id
+        INNER JOIN session_player_hole sph ON sph.session_player_id = sp.id
         WHERE sp.player_id = :player_id
           AND ps.status = 'completed'
           AND sp.approval_state = 'approved'
-          {course_filter}
+          AND (:course_id IS NULL OR ps.course_id = :course_id)
         GROUP BY
             ps.id,
             ps.started_at,
@@ -1393,14 +1503,11 @@ def get_player_layout_stats(
             l.id,
             l.name
         HAVING COUNT(sph.id) = SUM(
-            CASE
-                WHEN sph.throws_count IS NOT NULL THEN 1
-                ELSE 0
-            END
+            CASE WHEN sph.throws_count IS NOT NULL THEN 1 ELSE 0 END
         )
         ORDER BY ps.started_at DESC, ps.id DESC
         """,
-        params,
+        {"player_id": player_id, "course_id": course_id},
     )
 
     rows_by_layout: dict[int, list[dict]] = defaultdict(list)
@@ -1408,37 +1515,18 @@ def get_player_layout_stats(
         rows_by_layout[int(row["layout_id"])].append(row)
 
     result: list[dict] = []
-
     for layout_rows in rows_by_layout.values():
         newest_row = layout_rows[0]
         round_count = len(layout_rows)
-
         throws_values = [int(row["total_throws"]) for row in layout_rows]
         relative_values = [
             int(row["total_throws"]) - int(row["total_par"])
             for row in layout_rows
         ]
-
         best_index = min(
             range(round_count),
-            key=lambda index: (
-                throws_values[index],
-                relative_values[index],
-            ),
+            key=lambda index: (throws_values[index], relative_values[index]),
         )
-
-        average_throws = round(sum(throws_values) / round_count, 2)
-        average_relative = round(sum(relative_values) / round_count, 2)
-
-        last_10_average_throws: float | None = None
-        last_10_average_relative: float | None = None
-
-        if round_count >= 11:
-            latest_10_throws = throws_values[:10]
-            latest_10_relative = relative_values[:10]
-
-            last_10_average_throws = round(sum(latest_10_throws) / 10, 2)
-            last_10_average_relative = round(sum(latest_10_relative) / 10, 2)
 
         result.append(
             {
@@ -1452,148 +1540,19 @@ def get_player_layout_stats(
                 "round_count": round_count,
                 "personal_best_throws": throws_values[best_index],
                 "personal_best_relative_to_par": relative_values[best_index],
-                "average_throws": average_throws,
-                "average_relative_to_par": average_relative,
-                "last_10_average_throws": last_10_average_throws,
-                "last_10_average_relative_to_par": last_10_average_relative,
+                "average_throws": round(sum(throws_values) / round_count, 2),
+                "average_relative_to_par": round(sum(relative_values) / round_count, 2),
+                "last_10_average_throws": (
+                    round(sum(throws_values[:10]) / 10, 2)
+                    if round_count >= 11
+                    else None
+                ),
+                "last_10_average_relative_to_par": (
+                    round(sum(relative_values[:10]) / 10, 2)
+                    if round_count >= 11
+                    else None
+                ),
             }
         )
 
-    return sorted(
-        result,
-        key=lambda row: (row["course_name"], row["layout_name"]),
-    )
-    
-# =========================
-# Nya skriv-endpoints
-# =========================
-
-@app.post("/change-password")
-def change_password(request: ChangePasswordRequest) -> dict:
-    user = get_user_with_password(request.username)
-
-    if not verify_password(request.current_password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Current password is incorrect")
-
-    if request.current_password == request.new_password:
-        raise HTTPException(status_code=400, detail="New password must be different from current password")
-
-    new_password_hash = hash_password(request.new_password)
-
-    execute_write(
-        """
-        UPDATE user_account
-        SET
-            password_hash = :password_hash,
-            must_change_password = 0
-        WHERE id = :user_id
-        """,
-        {
-            "password_hash": new_password_hash,
-            "user_id": user["id"],
-        },
-    )
-
-    return {
-        "message": "Password changed successfully",
-        "username": user["username"],
-        "must_change_password": False,
-    }
-
-@app.post("/login", response_model=LoginResponse)
-def login(request: LoginRequest) -> LoginResponse:
-    user = get_user_with_password(request.username)
-
-    if not verify_password(request.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    token = create_access_token(
-        user_id=user["id"],
-        username=user["username"],
-        role=user["role"],
-    )
-
-    return LoginResponse(
-        access_token=token,
-        user_id=user["id"],
-        username=user["username"],
-        role=user["role"],
-        must_change_password=bool(user["must_change_password"]),
-    )
-    
-
-@app.patch("/rounds/{round_id}/holes/{sequence_number}")
-def update_round_hole(
-    round_id: int,
-    sequence_number: int,
-    request: UpdateHoleRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    rnd = get_round(round_id)
-
-    if rnd["status"] != "in_progress":
-        raise HTTPException(status_code=400, detail="Only in-progress rounds can be updated")
-
-    if not request.scores:
-        raise HTTPException(status_code=400, detail="No scores provided")
-
-    for score_update in request.scores:
-        session_player = get_session_player(round_id, score_update.player_id)
-        if not session_player:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Player {score_update.player_id} is not part of round {round_id}",
-            )
-
-        player = get_player(score_update.player_id)
-        determine_approval(source_user_id=current_user["id"], player=player)
-
-        execute_write(
-            """
-            UPDATE session_player_hole
-            SET
-                throws_count = :throws_count,
-                is_completed = :is_completed
-            WHERE session_player_id = :session_player_id
-              AND sequence_number = :sequence_number
-            """,
-            {
-                "throws_count": score_update.throws_count,
-                "is_completed": 1 if score_update.throws_count is not None else 0,
-                "session_player_id": session_player["id"],
-                "sequence_number": sequence_number,
-            },
-        )
-
-    return get_round_endpoint(round_id)
-
-@app.post("/rounds/{round_id}/complete")
-def complete_round(
-    round_id: int,
-    request: CompleteRoundRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    rnd = get_round(round_id)
-
-    if rnd["status"] != "in_progress":
-        raise HTTPException(status_code=400, detail="Round is not in progress")
-
-    if current_user["id"] != rnd["created_by_user_id"]:
-        raise HTTPException(status_code=403, detail="Only the creator can complete the round")
-
-    execute_write(
-        """
-        UPDATE play_session
-        SET
-            status = 'completed',
-            ended_at = :ended_at
-        WHERE id = :round_id
-        """,
-        {
-            "round_id": round_id,
-            "ended_at": request.ended_at,
-        },
-    )
-
-    return get_round_endpoint(round_id)
-    
+    return sorted(result, key=lambda row: (row["course_name"], row["layout_name"]))

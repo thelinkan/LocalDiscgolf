@@ -860,3 +860,57 @@
   background: #fdecea;
   border-color: #efb8b2;
 }
+
+.admin-course-section {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.admin-section-header {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.admin-section-header h3 {
+  margin: 0;
+}
+
+.admin-hole-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-hole-row {
+  align-items: center;
+  border-top: 1px solid #edf2ed;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 13px 4px;
+}
+
+.admin-hole-row:first-child {
+  border-top: none;
+}
+
+.admin-hole-row p {
+  color: #536252;
+  margin: 4px 0 0;
+}
+
+@media (max-width: 650px) {
+  .admin-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-hole-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

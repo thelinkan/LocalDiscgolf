@@ -1,5 +1,6 @@
 import type {
   PublicCourseApiResponse,
+  PublicCourseHoleApiResponse,
   PublicLayoutApiResponse,
   PublicLayoutHoleApiResponse,
 } from '../api'
@@ -158,25 +159,32 @@ interface PublicLayoutsPageProps {
   course: PublicCourseApiResponse
   layouts: PublicLayoutApiResponse[]
   includeInactive: boolean
+  isAdmin: boolean
+  holes: PublicCourseHoleApiResponse[]
+  isLoadingHoles: boolean
+  holesError: string | null
   isLoading: boolean
   error: string | null
   onBack: () => void
-
   onIncludeInactiveChange: (checked: boolean) => void
   onLayoutClick: (layout: PublicLayoutApiResponse) => void
-
-
+  onAddHole: () => void
 }
 
 export function PublicLayoutsPage({
   course,
   layouts,
   includeInactive,
+  isAdmin,
+  holes,
+  isLoadingHoles,
+  holesError,
   isLoading,
   error,
   onBack,
   onIncludeInactiveChange,
   onLayoutClick,
+  onAddHole,
 }: PublicLayoutsPageProps) {
   return (
     <main className="content-page">
@@ -240,6 +248,55 @@ export function PublicLayoutsPage({
               <span className="public-card-arrow">›</span>
             </button>
           ))}
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="admin-course-section">
+          <div className="admin-section-header">
+            <h3>Hål</h3>
+            <button className="primary-button" onClick={onAddHole}>
+              Lägg till hål
+            </button>
+          </div>
+
+          {isLoadingHoles && <p>Laddar hål…</p>}
+
+          {holesError && <p className="error-message">{holesError}</p>}
+
+          {!isLoadingHoles && !holesError && holes.length === 0 && (
+            <p className="muted-text">Inga hål finns på banan ännu.</p>
+          )}
+
+          {!isLoadingHoles && !holesError && holes.length > 0 && (
+            <div className="admin-hole-list">
+              {holes.map((hole) => (
+                <div
+                  key={hole.id}
+                  className={`admin-hole-row ${
+                    hole.is_active === 0 ? 'inactive-card' : ''
+                  }`}
+                >
+                  <div>
+                    <strong>
+                      Hål {hole.hole_number}
+                      {hole.name ? ` - ${hole.name}` : ''}
+                    </strong>
+                    <p>
+                      {hole.length_meters} m · Par {hole.par_value}
+                    </p>
+                    {hole.notes && (
+                      <p className="public-description">{hole.notes}</p>
+                    )}
+                  </div>
+
+                  {hole.is_active === 0 && (
+                    <span className="inactive-badge">Inaktiv</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </main>

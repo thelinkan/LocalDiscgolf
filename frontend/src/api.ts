@@ -119,6 +119,25 @@ export interface PublicLayoutHoleApiResponse {
   par_value: number
 }
 
+export interface PublicCourseHoleApiResponse {
+  id: number
+  course_id: number
+  hole_number: number
+  name: string | null
+  length_meters: number
+  par_value: number
+  notes: string | null
+  is_active: number
+}
+
+export interface HoleCreateRequest {
+  hole_number: number
+  name?: string | null
+  length_meters: number
+  par_value: number
+  notes?: string | null
+}
+
 export class ApiError extends Error {
   statusCode: number
   responseBody: string
@@ -458,4 +477,29 @@ export async function deleteCourse(
   })
 
   await parseResponse<unknown>(response)
+}
+
+export async function getCourseHoles(
+  courseId: number,
+): Promise<PublicCourseHoleApiResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/holes`)
+
+  return parseResponse<PublicCourseHoleApiResponse[]>(response)
+}
+
+export async function createHole(
+  token: string,
+  courseId: number,
+  requestBody: HoleCreateRequest,
+): Promise<PublicCourseHoleApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/holes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicCourseHoleApiResponse>(response)
 }

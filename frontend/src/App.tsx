@@ -17,6 +17,8 @@ import {
   createCourse,
   deleteCourse,
   updateCourse,
+  createHole,
+  getCourseHoles,
   changePassword,
   login,
   type CourseApiResponse,
@@ -29,6 +31,7 @@ import {
   type PublicCourseApiResponse,
   type PublicLayoutApiResponse,
   type PublicLayoutHoleApiResponse,
+  type PublicCourseHoleApiResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -134,6 +137,11 @@ function App() {
   const [publicDataError, setPublicDataError] = useState<string | null>(null)
 
   const [includeInactiveCourses, setIncludeInactiveCourses] = useState(false)
+  const [courseHoles, setCourseHoles] =
+    useState<PublicCourseHoleApiResponse[]>([])
+
+  const [isLoadingCourseHoles, setIsLoadingCourseHoles] = useState(false)
+  const [courseHolesError, setCourseHolesError] = useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
 
@@ -370,6 +378,10 @@ function App() {
             course={selectedPublicCourse}
             layouts={publicLayouts}
             includeInactive={includeInactiveLayouts}
+            isAdmin={false}
+            holes={[]}
+            isLoadingHoles={false}
+            holesError={null}
             isLoading={isLoadingPublicData}
             error={publicDataError}
             onBack={() => setView('public_courses')}
@@ -377,6 +389,7 @@ function App() {
               void changeIncludeInactiveLayouts(checked)
             }
             onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
+            onAddHole={() => {}}
           />
         </div>
       )
@@ -663,12 +676,30 @@ function App() {
     }
   }
 
+  async function loadCourseHoles(courseId: number) {
+    setIsLoadingCourseHoles(true)
+    setCourseHolesError(null)
+
+    try {
+      const holes = await getCourseHoles(courseId)
+      setCourseHoles(holes)
+    } catch (error) {
+      setCourseHolesError(apiErrorText(error, 'Kunde inte hämta hål.'))
+    } finally {
+      setIsLoadingCourseHoles(false)
+    }
+  }
+
   async function openPublicLayouts(course: PublicCourseApiResponse) {
     setSelectedPublicCourse(course)
     setIncludeInactiveLayouts(false)
     setView('public_layouts')
     setIsLoadingPublicData(true)
     setPublicDataError(null)
+
+    if (isAdmin) {
+      void loadCourseHoles(course.id)
+    }
 
     try {
       const layouts = await getPublicCourseLayouts(course.id, false)
@@ -677,6 +708,77 @@ function App() {
       setPublicDataError(apiErrorText(error, 'Kunde inte hämta layouter.'))
     } finally {
       setIsLoadingPublicData(false)
+    }
+  }
+
+  async function handleAddHole() {
+    if (!storedToken || !isAdmin || !selectedPublicCourse) {
+      return
+    }
+
+    const holeNumberText = window.prompt('Hålnummer:')
+
+    if (!holeNumberText) {
+      return
+    }
+
+    const holeNumber = Number(holeNumberText)
+
+    if (!Number.isInteger(holeNumber) || holeNumber <= 0) {
+      window.alert('Hålnummer måste vara ett positivt heltal.')
+      return
+    }
+
+    const lengthText = window.prompt('Längd i meter:')
+
+    if (!lengthText) {
+      return
+    }
+
+    const lengthMeters = Number(lengthText)
+
+    if (!Number.isInteger(lengthMeters) || lengthMeters <= 0) {
+      window.alert('Längd måste vara ett positivt heltal.')
+      return
+    }
+
+    const parText = window.prompt('Par:', '3')
+
+    if (!parText) {
+      return
+    }
+
+    const parValue = Number(parText)
+
+    if (!Number.isInteger(parValue) || parValue <= 0) {
+      window.alert('Par måste vara ett positivt heltal.')
+      return
+    }
+
+    const nameInput = window.prompt('Namn på hålet, kan lämnas tomt:', '')
+    const notesInput = window.prompt('Anteckning, kan lämnas tomt:', '')
+
+    setIsLoadingCourseHoles(true)
+    setCourseHolesError(null)
+
+    try {
+      await createHole(storedToken, selectedPublicCourse.id, {
+        hole_number: holeNumber,
+        name: nameInput?.trim() ? nameInput.trim() : null,
+        length_meters: lengthMeters,
+        par_value: parValue,
+        notes: notesInput?.trim() ? notesInput.trim() : null,
+      })
+
+      await loadCourseHoles(selectedPublicCourse.id)
+
+      // Uppdatera banlistans layout/hål-räknare om användaren går tillbaka.
+      await openPublicCourses(includeInactiveCourses)
+      setView('public_layouts')
+    } catch (error) {
+      setCourseHolesError(apiErrorText(error, 'Kunde inte skapa hål.'))
+    } finally {
+      setIsLoadingCourseHoles(false)
     }
   }
 
@@ -894,6 +996,10 @@ function App() {
           course={selectedPublicCourse}
           layouts={publicLayouts}
           includeInactive={includeInactiveLayouts}
+          isAdmin={isAdmin}
+          holes={courseHoles}
+          isLoadingHoles={isLoadingCourseHoles}
+          holesError={courseHolesError}
           isLoading={isLoadingPublicData}
           error={publicDataError}
           onBack={() => setView('public_courses')}
@@ -901,6 +1007,7 @@ function App() {
             void changeIncludeInactiveLayouts(checked)
           }
           onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
+          onAddHole={() => void handleAddHole()}
         />
       )}
 

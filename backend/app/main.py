@@ -1841,7 +1841,20 @@ def update_course(
     request: CourseUpdateRequest,
     current_user: dict = Depends(require_admin),
 ) -> dict:
-    get_course(course_id)
+    course = fetch_one(
+        """
+        SELECT
+            id,
+            name,
+            is_active
+        FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
 
     if request.name is None and request.is_active is None:
         raise HTTPException(status_code=400, detail="No changes provided")
@@ -1867,7 +1880,31 @@ def update_course(
         },
     )
 
-    return get_course_endpoint(course_id)
+    updated_course = fetch_one(
+        """
+        SELECT
+            c.id,
+            c.name,
+            c.is_active,
+            (
+                SELECT COUNT(*)
+                FROM hole h
+                WHERE h.course_id = c.id
+                  AND h.is_active = 1
+            ) AS hole_count,
+            (
+                SELECT COUNT(*)
+                FROM layout l
+                WHERE l.course_id = c.id
+                  AND l.is_active = 1
+            ) AS layout_count
+        FROM course c
+        WHERE c.id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    return updated_course
 
 
 @app.delete("/courses/{course_id}")

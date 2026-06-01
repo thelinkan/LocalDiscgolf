@@ -63,6 +63,59 @@ class CompleteRoundRequest(BaseModel):
     ended_at: datetime
 
 
+class CourseCreateRequest(BaseModel):
+    name: str
+
+
+class CourseUpdateRequest(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class HoleCreateRequest(BaseModel):
+    hole_number: int
+    name: str | None = None
+    length_meters: int
+    par_value: int
+    notes: str | None = None
+
+
+class HoleUpdateRequest(BaseModel):
+    hole_number: int | None = None
+    name: str | None = None
+    length_meters: int | None = None
+    par_value: int | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
+class HoleTeeCreateRequest(BaseModel):
+    name: str
+
+
+class HoleBasketCreateRequest(BaseModel):
+    name: str
+
+
+class HoleVariantCreateRequest(BaseModel):
+    tee_id: int
+    basket_id: int
+    length_meters: int
+    par_value: int
+
+
+class LayoutHoleCreateRequest(BaseModel):
+    hole_id: int
+    hole_variant_id: int | None = None
+    sequence_number: int | None = None
+
+
+class LayoutCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    holes: list[LayoutHoleCreateRequest]
+
+
 # =========================
 # Databashjälp för transaktioner
 # =========================
@@ -621,6 +674,182 @@ def calculate_streak(results_newest_first: list[dict]) -> int:
 
     return streak if counts_non_positive else -streak
 
+# =========================
+# Hål och varianter
+# =========================
+
+def get_hole(hole_id: int) -> dict:
+    hole = fetch_one(
+        """
+        SELECT
+            id,
+            course_id,
+            hole_number,
+            name,
+            length_meters,
+            par_value,
+            notes,
+            is_active
+        FROM hole
+        WHERE id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    if not hole:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    return hole
+
+
+def get_hole_tee(tee_id: int) -> dict:
+    tee = fetch_one(
+        """
+        SELECT
+            id,
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        FROM hole_tee
+        WHERE id = :tee_id
+        """,
+        {"tee_id": tee_id},
+    )
+
+    if not tee:
+        raise HTTPException(status_code=404, detail="Tee not found")
+
+    return tee
+
+
+def get_hole_basket(basket_id: int) -> dict:
+    basket = fetch_one(
+        """
+        SELECT
+            id,
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        FROM hole_basket
+        WHERE id = :basket_id
+        """,
+        {"basket_id": basket_id},
+    )
+
+    if not basket:
+        raise HTTPException(status_code=404, detail="Basket not found")
+
+    return basket
+
+
+def get_hole_variant(variant_id: int) -> dict:
+    variant = fetch_one(
+        """
+        SELECT
+            id,
+            hole_id,
+            tee_id,
+            basket_id,
+            length_meters,
+            par_value,
+            is_active
+        FROM hole_variant
+        WHERE id = :variant_id
+        """,
+        {"variant_id": variant_id},
+    )
+
+    if not variant:
+        raise HTTPException(status_code=404, detail="Hole variant not found")
+
+    return variant
+
+
+def ensure_hole_belongs_to_course(hole: dict, course_id: int) -> None:
+    if int(hole["course_id"]) != int(course_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Hole does not belong to course",
+        )
+
+
+def ensure_variant_belongs_to_hole(variant: dict, hole_id: int) -> None:
+    if int(variant["hole_id"]) != int(hole_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Hole variant does not belong to hole",
+        )
+
+def get_single_active_variant_for_hole(hole_id: int) -> dict:
+    variants = fetch_all(
+        """
+        SELECT
+            id,
+            hole_id,
+            tee_id,
+            basket_id,
+            length_meters,
+            par_value,
+            is_active
+        FROM hole_variant
+        WHERE hole_id = :hole_id
+          AND is_active = 1
+        ORDER BY id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    if not variants:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hole {hole_id} has no active hole variants",
+        )
+
+    if len(variants) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Hole {hole_id} has multiple active variants. "
+                "hole_variant_id must be specified."
+            ),
+        )
+
+    return variants[0]    
+
+def get_layout_holes(layout_id: int) -> list[dict]:
+    holes = fetch_all(
+        """
+        SELECT
+            lh.sequence_number,
+            h.id AS hole_id,
+            hv.id AS hole_variant_id,
+            h.hole_number,
+            h.name AS hole_name,
+            ht.name AS tee_name,
+            hb.name AS basket_name,
+            COALESCE(hv.length_meters, h.length_meters) AS length_meters,
+            COALESCE(hv.par_value, h.par_value) AS par_value
+        FROM layout_hole lh
+        INNER JOIN hole h
+            ON h.id = lh.hole_id
+        LEFT JOIN hole_variant hv
+            ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht
+            ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb
+            ON hb.id = hv.basket_id
+        WHERE lh.layout_id = :layout_id
+        ORDER BY lh.sequence_number
+        """,
+        {"layout_id": layout_id},
+    )
+
+    if not holes:
+        raise HTTPException(status_code=400, detail="Layout has no holes")
+
+    return holes
 
 # =========================
 # Lösenord
@@ -695,14 +924,19 @@ def get_course_layouts(course_id: int, include_inactive: bool = False) -> list[d
             l.description,
             l.is_active,
             COUNT(lh.id) AS hole_count,
-            COALESCE(SUM(hv.par_value), 0) AS total_par,
-            COALESCE(SUM(hv.length_meters), 0) AS total_length_meters
+            COALESCE(SUM(COALESCE(hv.par_value, h.par_value)), 0) AS total_par,
+            COALESCE(SUM(COALESCE(hv.length_meters, h.length_meters)), 0) AS total_length_meters
         FROM layout l
-        INNER JOIN course c ON c.id = l.course_id
-        LEFT JOIN layout_hole lh ON lh.layout_id = l.id
-        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
+        INNER JOIN course c
+            ON c.id = l.course_id
+        LEFT JOIN layout_hole lh
+            ON lh.layout_id = l.id
+        LEFT JOIN hole h
+            ON h.id = lh.hole_id
+        LEFT JOIN hole_variant hv
+            ON hv.id = lh.hole_variant_id
         WHERE l.course_id = :course_id
-          AND (:include_inactive = 1 OR l.is_active = 1)
+        AND (:include_inactive = 1 OR l.is_active = 1)
         GROUP BY
             l.id,
             l.course_id,
@@ -710,7 +944,9 @@ def get_course_layouts(course_id: int, include_inactive: bool = False) -> list[d
             l.name,
             l.description,
             l.is_active
-        ORDER BY l.is_active DESC, l.name
+        ORDER BY
+            l.is_active DESC,
+            l.name
         """,
         {
             "course_id": course_id,
@@ -779,13 +1015,17 @@ def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
             hv.id AS hole_variant_id,
             ht.name AS tee_name,
             hb.name AS basket_name,
-            hv.length_meters,
-            hv.par_value
+            COALESCE(hv.length_meters, h.length_meters) AS length_meters,
+            COALESCE(hv.par_value, h.par_value) AS par_value
         FROM layout_hole lh
-        INNER JOIN hole h ON h.id = lh.hole_id
-        LEFT JOIN hole_variant hv ON hv.id = lh.hole_variant_id
-        LEFT JOIN hole_tee ht ON ht.id = hv.tee_id
-        LEFT JOIN hole_basket hb ON hb.id = hv.basket_id
+        INNER JOIN hole h
+            ON h.id = lh.hole_id
+        LEFT JOIN hole_variant hv
+            ON hv.id = lh.hole_variant_id
+        LEFT JOIN hole_tee ht
+            ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb
+            ON hb.id = hv.basket_id
         WHERE lh.layout_id = :layout_id
         ORDER BY lh.sequence_number
         """,
@@ -1556,3 +1796,597 @@ def get_player_layout_stats(
         )
 
     return sorted(result, key=lambda row: (row["course_name"], row["layout_name"]))
+
+# =========================
+# Skapa/uppdatera/radera banor
+# =========================
+
+@app.post("/courses")
+def create_course(
+    request: CourseCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    course_id = execute_write(
+        """
+        INSERT INTO course (
+            name,
+            is_active
+        )
+        VALUES (
+            :name,
+            1
+        )
+        """,
+        {"name": request.name},
+    )
+
+    return get_course_endpoint(int(course_id))
+
+
+@app.patch("/courses/{course_id}")
+def update_course(
+    course_id: int,
+    request: CourseUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_course(course_id)
+
+    if request.name is None and request.is_active is None:
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    execute_write(
+        """
+        UPDATE course
+        SET
+            name = COALESCE(:name, name),
+            is_active = COALESCE(:is_active, is_active)
+        WHERE id = :course_id
+        """,
+        {
+            "course_id": course_id,
+            "name": request.name,
+            "is_active": (
+                None
+                if request.is_active is None
+                else 1 if request.is_active else 0
+            ),
+        },
+    )
+
+    return get_course_endpoint(course_id)
+
+
+@app.delete("/courses/{course_id}")
+def delete_course(
+    course_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    course = fetch_one(
+        """
+        SELECT id, name
+        FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    hole_count = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM hole
+        WHERE course_id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    if hole_count and int(hole_count["count_value"]) > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Course has holes and cannot be deleted",
+        )
+
+    execute_write(
+        """
+        DELETE FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    return {
+        "message": "Course deleted",
+        "id": course_id,
+        "name": course["name"],
+    }
+
+# =========================
+# Skapa/uppdatera/radera hål och varianter
+# =========================
+
+@app.post("/courses/{course_id}/holes")
+def create_hole(
+    course_id: int,
+    request: HoleCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_course(course_id)
+
+    def _create_hole_tx(conn):
+        hole_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO hole (
+                course_id,
+                hole_number,
+                name,
+                length_meters,
+                par_value,
+                notes,
+                is_active
+            )
+            VALUES (
+                :course_id,
+                :hole_number,
+                :name,
+                :length_meters,
+                :par_value,
+                :notes,
+                1
+            )
+            """,
+            {
+                "course_id": course_id,
+                "hole_number": request.hole_number,
+                "name": request.name,
+                "length_meters": request.length_meters,
+                "par_value": request.par_value,
+                "notes": request.notes,
+            },
+        )
+
+        tee_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO hole_tee (
+                hole_id,
+                name,
+                sort_order,
+                is_active
+            )
+            VALUES (
+                :hole_id,
+                'Standard',
+                1,
+                1
+            )
+            """,
+            {"hole_id": hole_id},
+        )
+
+        basket_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO hole_basket (
+                hole_id,
+                name,
+                sort_order,
+                is_active
+            )
+            VALUES (
+                :hole_id,
+                'Standard',
+                1,
+                1
+            )
+            """,
+            {"hole_id": hole_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            INSERT INTO hole_variant (
+                hole_id,
+                tee_id,
+                basket_id,
+                length_meters,
+                par_value,
+                is_active
+            )
+            VALUES (
+                :hole_id,
+                :tee_id,
+                :basket_id,
+                :length_meters,
+                :par_value,
+                1
+            )
+            """,
+            {
+                "hole_id": hole_id,
+                "tee_id": tee_id,
+                "basket_id": basket_id,
+                "length_meters": request.length_meters,
+                "par_value": request.par_value,
+            },
+        )
+
+        return hole_id
+
+    hole_id = run_in_transaction(_create_hole_tx)
+    return get_hole(int(hole_id))
+
+
+@app.patch("/holes/{hole_id}")
+def update_hole(
+    hole_id: int,
+    request: HoleUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    if (
+        request.hole_number is None
+        and request.name is None
+        and request.length_meters is None
+        and request.par_value is None
+        and request.notes is None
+        and request.is_active is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    execute_write(
+        """
+        UPDATE hole
+        SET
+            hole_number = COALESCE(:hole_number, hole_number),
+            name = :name,
+            length_meters = COALESCE(:length_meters, length_meters),
+            par_value = COALESCE(:par_value, par_value),
+            notes = :notes,
+            is_active = COALESCE(:is_active, is_active)
+        WHERE id = :hole_id
+        """,
+        {
+            "hole_id": hole_id,
+            "hole_number": request.hole_number,
+            "name": request.name,
+            "length_meters": request.length_meters,
+            "par_value": request.par_value,
+            "notes": request.notes,
+            "is_active": (
+                None
+                if request.is_active is None
+                else 1 if request.is_active else 0
+            ),
+        },
+    )
+
+    return get_hole(hole_id)
+
+@app.get("/holes/{hole_id}/tees")
+def get_hole_tees(hole_id: int) -> list[dict]:
+    get_hole(hole_id)
+
+    return fetch_all(
+        """
+        SELECT
+            id,
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        FROM hole_tee
+        WHERE hole_id = :hole_id
+        ORDER BY sort_order, name
+        """,
+        {"hole_id": hole_id},
+    )
+
+
+@app.get("/holes/{hole_id}/baskets")
+def get_hole_baskets(hole_id: int) -> list[dict]:
+    get_hole(hole_id)
+
+    return fetch_all(
+        """
+        SELECT
+            id,
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        FROM hole_basket
+        WHERE hole_id = :hole_id
+        ORDER BY sort_order, name
+        """,
+        {"hole_id": hole_id},
+    )
+
+
+@app.get("/holes/{hole_id}/variants")
+def get_hole_variants(hole_id: int) -> list[dict]:
+    get_hole(hole_id)
+
+    return fetch_all(
+        """
+        SELECT
+            hv.id,
+            hv.hole_id,
+            hv.tee_id,
+            ht.name AS tee_name,
+            hv.basket_id,
+            hb.name AS basket_name,
+            hv.length_meters,
+            hv.par_value,
+            hv.is_active
+        FROM hole_variant hv
+        LEFT JOIN hole_tee ht
+            ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb
+            ON hb.id = hv.basket_id
+        WHERE hv.hole_id = :hole_id
+        ORDER BY
+            ht.sort_order,
+            hb.sort_order,
+            hv.id
+        """,
+        {"hole_id": hole_id},
+    )
+
+@app.post("/holes/{hole_id}/tees")
+def create_hole_tee(
+    hole_id: int,
+    request: HoleTeeCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    max_sort = fetch_one(
+        """
+        SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order
+        FROM hole_tee
+        WHERE hole_id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    next_sort_order = int(max_sort["max_sort_order"]) + 1 if max_sort else 1
+
+    tee_id = execute_write(
+        """
+        INSERT INTO hole_tee (
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        )
+        VALUES (
+            :hole_id,
+            :name,
+            :sort_order,
+            1
+        )
+        """,
+        {
+            "hole_id": hole_id,
+            "name": request.name,
+            "sort_order": next_sort_order,
+        },
+    )
+
+    return get_hole_tee(int(tee_id))
+
+
+@app.post("/holes/{hole_id}/baskets")
+def create_hole_basket(
+    hole_id: int,
+    request: HoleBasketCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    max_sort = fetch_one(
+        """
+        SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order
+        FROM hole_basket
+        WHERE hole_id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    next_sort_order = int(max_sort["max_sort_order"]) + 1 if max_sort else 1
+
+    basket_id = execute_write(
+        """
+        INSERT INTO hole_basket (
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        )
+        VALUES (
+            :hole_id,
+            :name,
+            :sort_order,
+            1
+        )
+        """,
+        {
+            "hole_id": hole_id,
+            "name": request.name,
+            "sort_order": next_sort_order,
+        },
+    )
+
+    return get_hole_basket(int(basket_id))
+
+@app.post("/holes/{hole_id}/variants")
+def create_hole_variant(
+    hole_id: int,
+    request: HoleVariantCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    tee = get_hole_tee(request.tee_id)
+    basket = get_hole_basket(request.basket_id)
+
+    if int(tee["hole_id"]) != int(hole_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Tee does not belong to hole",
+        )
+
+    if int(basket["hole_id"]) != int(hole_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Basket does not belong to hole",
+        )
+
+    variant_id = execute_write(
+        """
+        INSERT INTO hole_variant (
+            hole_id,
+            tee_id,
+            basket_id,
+            length_meters,
+            par_value,
+            is_active
+        )
+        VALUES (
+            :hole_id,
+            :tee_id,
+            :basket_id,
+            :length_meters,
+            :par_value,
+            1
+        )
+        """,
+        {
+            "hole_id": hole_id,
+            "tee_id": request.tee_id,
+            "basket_id": request.basket_id,
+            "length_meters": request.length_meters,
+            "par_value": request.par_value,
+        },
+    )
+
+    return get_hole_variant(int(variant_id))
+
+@app.post("/courses/{course_id}/layouts")
+def create_layout(
+    course_id: int,
+    request: LayoutCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_course(course_id)
+
+    if not request.holes:
+        raise HTTPException(
+            status_code=400,
+            detail="Layout must contain at least one hole",
+        )
+
+    seen_sequences: set[int] = set()
+    prepared_holes: list[dict] = []
+
+    for index, layout_hole in enumerate(request.holes, start=1):
+        sequence_number = layout_hole.sequence_number or index
+
+        if sequence_number in seen_sequences:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate sequence number: {sequence_number}",
+            )
+
+        seen_sequences.add(sequence_number)
+
+        hole = get_hole(layout_hole.hole_id)
+        ensure_hole_belongs_to_course(hole, course_id)
+
+        if not bool(hole["is_active"]):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Hole {layout_hole.hole_id} is inactive",
+            )
+
+        if layout_hole.hole_variant_id is None:
+            variant = get_single_active_variant_for_hole(layout_hole.hole_id)
+            hole_variant_id = int(variant["id"])
+        else:
+            variant = get_hole_variant(layout_hole.hole_variant_id)
+            ensure_variant_belongs_to_hole(variant, layout_hole.hole_id)
+
+            if not bool(variant["is_active"]):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Hole variant {layout_hole.hole_variant_id} is inactive",
+                )
+
+            hole_variant_id = layout_hole.hole_variant_id
+
+        prepared_holes.append(
+            {
+                "sequence_number": sequence_number,
+                "hole_id": layout_hole.hole_id,
+                "hole_variant_id": hole_variant_id,
+            }
+        )
+
+    def _create_layout_tx(conn):
+        layout_id = tx_execute_write(
+            conn,
+            """
+            INSERT INTO layout (
+                course_id,
+                name,
+                description,
+                is_active
+            )
+            VALUES (
+                :course_id,
+                :name,
+                :description,
+                1
+            )
+            """,
+            {
+                "course_id": course_id,
+                "name": request.name,
+                "description": request.description,
+            },
+        )
+
+        for prepared_hole in prepared_holes:
+            tx_execute_write(
+                conn,
+                """
+                INSERT INTO layout_hole (
+                    layout_id,
+                    sequence_number,
+                    hole_id,
+                    hole_variant_id
+                )
+                VALUES (
+                    :layout_id,
+                    :sequence_number,
+                    :hole_id,
+                    :hole_variant_id
+                )
+                """,
+                {
+                    "layout_id": layout_id,
+                    "sequence_number": prepared_hole["sequence_number"],
+                    "hole_id": prepared_hole["hole_id"],
+                    "hole_variant_id": prepared_hole["hole_variant_id"],
+                },
+            )
+
+        return layout_id
+
+    layout_id = run_in_transaction(_create_layout_tx)
+    return get_layout_endpoint(int(layout_id))

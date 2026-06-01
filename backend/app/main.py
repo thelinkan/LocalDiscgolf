@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
 
 from app.db import fetch_all, fetch_one, execute_write, run_in_transaction
-from app.auth import create_access_token, get_current_user
+from app.auth import create_access_token, get_current_user, require_admin
 
 
 app = FastAPI(title="LocalDiscgolf API")

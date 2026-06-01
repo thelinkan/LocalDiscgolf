@@ -1810,14 +1810,21 @@ def create_course(
         """
         INSERT INTO course (
             name,
-            is_active
+            is_active,
+            created_by_user_id,
+            updated_by_user_id
         )
         VALUES (
             :name,
-            1
+            1,
+            :user_id,
+            :user_id
         )
         """,
-        {"name": request.name},
+        {
+            "name": request.name,
+            "user_id": current_user["id"],
+        },
     )
 
     return get_course_endpoint(int(course_id))
@@ -1839,7 +1846,8 @@ def update_course(
         UPDATE course
         SET
             name = COALESCE(:name, name),
-            is_active = COALESCE(:is_active, is_active)
+            is_active = COALESCE(:is_active, is_active),
+            updated_by_user_id = :user_id
         WHERE id = :course_id
         """,
         {
@@ -1850,6 +1858,7 @@ def update_course(
                 if request.is_active is None
                 else 1 if request.is_active else 0
             ),
+            "user_id": current_user["id"],
         },
     )
 
@@ -1925,7 +1934,9 @@ def create_hole(
                 length_meters,
                 par_value,
                 notes,
-                is_active
+                is_active,
+                created_by_user_id,
+                updated_by_user_id
             )
             VALUES (
                 :course_id,
@@ -1934,7 +1945,9 @@ def create_hole(
                 :length_meters,
                 :par_value,
                 :notes,
-                1
+                1,
+                :user_id,
+                :user_id
             )
             """,
             {
@@ -1944,6 +1957,7 @@ def create_hole(
                 "length_meters": request.length_meters,
                 "par_value": request.par_value,
                 "notes": request.notes,
+                "user_id": current_user["id"],
             },
         )
 
@@ -2043,11 +2057,12 @@ def update_hole(
         UPDATE hole
         SET
             hole_number = COALESCE(:hole_number, hole_number),
-            name = :name,
+            name = COALESCE(:name, name),
             length_meters = COALESCE(:length_meters, length_meters),
             par_value = COALESCE(:par_value, par_value),
-            notes = :notes,
-            is_active = COALESCE(:is_active, is_active)
+            notes = COALESCE(:notes, notes),
+            is_active = COALESCE(:is_active, is_active),
+            updated_by_user_id = :user_id
         WHERE id = :hole_id
         """,
         {
@@ -2062,6 +2077,7 @@ def update_hole(
                 if request.is_active is None
                 else 1 if request.is_active else 0
             ),
+            "user_id": current_user["id"],
         },
     )
 

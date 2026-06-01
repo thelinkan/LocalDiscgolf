@@ -879,9 +879,8 @@ def health() -> dict:
 
 
 @app.get("/courses")
-def get_courses() -> list[dict]:
-    return fetch_all(
-        """
+def get_courses(include_inactive: bool = False) -> list[dict]:
+    sql = """
         SELECT
             c.id,
             c.name,
@@ -899,9 +898,15 @@ def get_courses() -> list[dict]:
                   AND l.is_active = 1
             ) AS layout_count
         FROM course c
-        WHERE c.is_active = 1
-        ORDER BY c.name
-        """
+        WHERE (:include_inactive = 1 OR c.is_active = 1)
+        ORDER BY
+            c.is_active DESC,
+            c.name
+    """
+
+    return fetch_all(
+        sql,
+        {"include_inactive": 1 if include_inactive else 0},
     )
 
 

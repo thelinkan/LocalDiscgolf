@@ -14,6 +14,9 @@ import {
   getPublicCourses,
   getPublicCourseLayouts ,
   getPublicLayoutHoles,
+  createCourse,
+  deleteCourse,
+  updateCourse,
   changePassword,
   login,
   type CourseApiResponse,
@@ -129,6 +132,10 @@ function App() {
 
   const [isLoadingPublicData, setIsLoadingPublicData] = useState(false)
   const [publicDataError, setPublicDataError] = useState<string | null>(null)
+
+  const [includeInactiveCourses, setIncludeInactiveCourses] = useState(false)
+
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -336,10 +343,16 @@ function App() {
 
           <PublicCoursesPage
             courses={publicCourses}
+            isAdmin={false}
+            includeInactive={false}
             isLoading={isLoadingPublicData}
             error={publicDataError}
             onBack={() => setView('home')}
             onCourseClick={(course) => void openPublicLayouts(course)}
+            onIncludeInactiveChange={() => {}}
+            onAddCourse={() => {}}
+            onEditCourse={() => {}}
+            onDeleteCourse={() => {}}
           />
         </div>
       )
@@ -538,16 +551,113 @@ function App() {
     }
   }
 
-  async function openPublicCourses() {
+  async function openPublicCourses(includeInactive = includeInactiveCourses) {
     setView('public_courses')
     setIsLoadingPublicData(true)
     setPublicDataError(null)
 
     try {
-      const courses = await getPublicCourses()
+      const courses = await getPublicCourses(includeInactive)
       setPublicCourses(courses)
     } catch (error) {
       setPublicDataError(apiErrorText(error, 'Kunde inte hämta banor.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+  async function changeIncludeInactiveCourses(checked: boolean) {
+    setIncludeInactiveCourses(checked)
+    await openPublicCourses(checked)
+  }
+
+  async function handleAddCourse() {
+    if (!storedToken || !isAdmin) {
+      return
+    }
+
+    const name = window.prompt('Namn på ny bana:')
+
+    if (!name || name.trim() === '') {
+      return
+    }
+
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      await createCourse(storedToken, {
+        name: name.trim(),
+      })
+
+      await openPublicCourses(includeInactiveCourses)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte skapa bana.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+
+  async function handleEditCourse(course: PublicCourseApiResponse) {
+    if (!storedToken || !isAdmin) {
+      return
+    }
+
+    const newName = window.prompt('Nytt namn på banan:', course.name)
+
+    if (!newName || newName.trim() === '') {
+      return
+    }
+
+    const shouldBeActive = window.confirm(
+      'Ska banan vara aktiv?\n\nOK = aktiv\nAvbryt = inaktiv',
+    )
+
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      await updateCourse(storedToken, course.id, {
+        name: newName.trim(),
+        is_active: shouldBeActive,
+      })
+
+      await openPublicCourses(includeInactiveCourses)
+    } catch (error) {
+      setPublicDataError(apiErrorText(error, 'Kunde inte uppdatera bana.'))
+    } finally {
+      setIsLoadingPublicData(false)
+    }
+  }
+
+
+  async function handleDeleteCourse(course: PublicCourseApiResponse) {
+    if (!storedToken || !isAdmin) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Vill du ta bort banan "${course.name}"?\n\nDet går bara om banan inte har några hål.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setIsLoadingPublicData(true)
+    setPublicDataError(null)
+
+    try {
+      await deleteCourse(storedToken, course.id)
+      await openPublicCourses(includeInactiveCourses)
+    } catch (error) {
+      setPublicDataError(
+        apiErrorText(
+          error,
+          'Kunde inte ta bort bana. Banor med hål kan inte tas bort.',
+        ),
+      )
     } finally {
       setIsLoadingPublicData(false)
     }
@@ -764,10 +874,18 @@ function App() {
       {view === 'public_courses' && (
         <PublicCoursesPage
           courses={publicCourses}
+          isAdmin={isAdmin}
+          includeInactive={includeInactiveCourses}
           isLoading={isLoadingPublicData}
           error={publicDataError}
           onBack={() => setView('home')}
           onCourseClick={(course) => void openPublicLayouts(course)}
+          onIncludeInactiveChange={(checked) =>
+            void changeIncludeInactiveCourses(checked)
+          }
+          onAddCourse={() => void handleAddCourse()}
+          onEditCourse={(course) => void handleEditCourse(course)}
+          onDeleteCourse={(course) => void handleDeleteCourse(course)}
         />
       )}
 

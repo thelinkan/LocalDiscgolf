@@ -14,10 +14,16 @@ interface PublicCoursesPageProps {
 
 export function PublicCoursesPage({
   courses,
+  isAdmin,
+  includeInactive,
   isLoading,
   error,
   onBack,
   onCourseClick,
+  onIncludeInactiveChange,
+  onAddCourse,
+  onEditCourse,
+  onDeleteCourse,
 }: PublicCoursesPageProps) {
   return (
     <main className="content-page">
@@ -25,8 +31,28 @@ export function PublicCoursesPage({
         <button className="secondary-button" onClick={onBack}>
           Tillbaka
         </button>
+
         <h2>Banor</h2>
       </div>
+
+      {isAdmin && (
+        <section className="admin-toolbar-card">
+          <button className="primary-button" onClick={onAddCourse}>
+            Lägg till bana
+          </button>
+
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(event) =>
+                onIncludeInactiveChange(event.target.checked)
+              }
+            />
+            Visa inaktiva banor
+          </label>
+        </section>
+      )}
 
       {isLoading && <p>Laddar banor…</p>}
       {error && <p className="error-message">{error}</p>}
@@ -42,22 +68,90 @@ export function PublicCoursesPage({
           {courses.map((course) => (
             <button
               key={course.id}
-              className="public-card"
+              className={`public-card ${
+                course.is_active === 0 ? 'inactive-card' : ''
+              }`}
               onClick={() => onCourseClick(course)}
             >
               <div>
-                <h3>{course.name}</h3>
+                <div className="layout-title-row">
+                  <h3>{course.name}</h3>
+
+                  {course.is_active === 0 && (
+                    <span className="inactive-badge">Inaktiv</span>
+                  )}
+                </div>
+
                 <p>
                   {course.hole_count} hål · {course.layout_count} aktiva layouter
                 </p>
               </div>
-              <span className="public-card-arrow">›</span>
+
+              <div className="public-card-actions">
+                {isAdmin && (
+                  <>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="icon-action-button"
+                      title="Redigera bana"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onEditCourse(course)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.stopPropagation()
+                          onEditCourse(course)
+                        }
+                      }}
+                    >
+                      ✎
+                    </span>
+
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="icon-action-button danger"
+                      title="Ta bort bana"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onDeleteCourse(course)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.stopPropagation()
+                          onDeleteCourse(course)
+                        }
+                      }}
+                    >
+                      🗑
+                    </span>
+                  </>
+                )}
+
+                <span className="public-card-arrow">›</span>
+              </div>
             </button>
           ))}
         </section>
       )}
     </main>
   )
+}
+
+interface PublicCoursesPageProps {
+  courses: PublicCourseApiResponse[]
+  isAdmin: boolean
+  includeInactive: boolean
+  isLoading: boolean
+  error: string | null
+  onBack: () => void
+  onCourseClick: (course: PublicCourseApiResponse) => void
+  onIncludeInactiveChange: (checked: boolean) => void
+  onAddCourse: () => void
+  onEditCourse: (course: PublicCourseApiResponse) => void
+  onDeleteCourse: (course: PublicCourseApiResponse) => void
 }
 
 interface PublicLayoutsPageProps {
@@ -67,8 +161,11 @@ interface PublicLayoutsPageProps {
   isLoading: boolean
   error: string | null
   onBack: () => void
+
   onIncludeInactiveChange: (checked: boolean) => void
   onLayoutClick: (layout: PublicLayoutApiResponse) => void
+
+
 }
 
 export function PublicLayoutsPage({

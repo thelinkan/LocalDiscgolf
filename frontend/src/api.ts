@@ -374,8 +374,11 @@ export async function getRoundDetail(
   return parseResponse<RoundDetailApiResponse>(response)
 }
 
-export async function getPublicCourses(): Promise<PublicCourseApiResponse[]> {
-  const response = await fetch(`${API_BASE_URL}/courses`)
+export async function getPublicCourses(
+  includeInactive = false,
+): Promise<PublicCourseApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/courses${query}`)
 
   return parseResponse<PublicCourseApiResponse[]>(response)
 }
@@ -399,4 +402,60 @@ export async function getPublicLayoutHoles(
   const response = await fetch(`${API_BASE_URL}/layouts/${layoutId}/holes`)
 
   return parseResponse<PublicLayoutHoleApiResponse[]>(response)
+}
+
+export interface CourseCreateRequest {
+  name: string
+}
+
+export interface CourseUpdateRequest {
+  name?: string
+  is_active?: boolean
+}
+
+export async function createCourse(
+  token: string,
+  requestBody: CourseCreateRequest,
+): Promise<PublicCourseApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/courses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicCourseApiResponse>(response)
+}
+
+export async function updateCourse(
+  token: string,
+  courseId: number,
+  requestBody: CourseUpdateRequest,
+): Promise<PublicCourseApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicCourseApiResponse>(response)
+}
+
+export async function deleteCourse(
+  token: string,
+  courseId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
 }

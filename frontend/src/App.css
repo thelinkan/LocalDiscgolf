@@ -816,3 +816,47 @@
     align-items: flex-start;
   }
 }
+
+.admin-toolbar-card {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.public-card-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.icon-action-button {
+  align-items: center;
+  border: 1px solid #d5dfd4;
+  border-radius: 999px;
+  color: #243324;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 1rem;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.icon-action-button:hover {
+  background: #eef4ed;
+}
+
+.icon-action-button.danger {
+  color: #9f2f25;
+}
+
+.icon-action-button.danger:hover {
+  background: #fdecea;
+  border-color: #efb8b2;
+}

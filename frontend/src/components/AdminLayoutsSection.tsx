@@ -10,7 +10,6 @@ import {
   type CourseHoleVariantApiResponse,
   type PublicCourseApiResponse,
   type PublicLayoutApiResponse,
-  type PublicLayoutHoleApiResponse,
 } from '../api'
 
 interface AdminLayoutsSectionProps {
@@ -143,7 +142,8 @@ export default function AdminLayoutsSection({
       setLayoutHoles(
         holes.map((hole) => ({
           localId: crypto.randomUUID(),
-          holeVariantId: hole.hole_variant_id ? String(hole.hole_variant_id) : '',
+          holeVariantId:
+            hole.hole_variant_id !== null ? String(hole.hole_variant_id) : '',
         })),
       )
     } catch (err) {

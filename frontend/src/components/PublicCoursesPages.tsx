@@ -168,7 +168,20 @@ interface PublicLayoutsPageProps {
   onBack: () => void
   onIncludeInactiveChange: (checked: boolean) => void
   onLayoutClick: (layout: PublicLayoutApiResponse) => void
-  onAddHole: () => void
+  showAddHoleForm: boolean
+  newHoleNumber: string
+  newHoleName: string
+  newHoleLengthMeters: string
+  newHolePar: string
+  newHoleNotes: string
+  isSavingHole: boolean
+  onShowAddHoleFormChange: (show: boolean) => void
+  onNewHoleNumberChange: (value: string) => void
+  onNewHoleNameChange: (value: string) => void
+  onNewHoleLengthMetersChange: (value: string) => void
+  onNewHoleParChange: (value: string) => void
+  onNewHoleNotesChange: (value: string) => void
+  onSubmitNewHole: () => void
 }
 
 export function PublicLayoutsPage({
@@ -184,7 +197,20 @@ export function PublicLayoutsPage({
   onBack,
   onIncludeInactiveChange,
   onLayoutClick,
-  onAddHole,
+  showAddHoleForm,
+  newHoleNumber,
+  newHoleName,
+  newHoleLengthMeters,
+  newHolePar,
+  newHoleNotes,
+  isSavingHole,
+  onShowAddHoleFormChange,
+  onNewHoleNumberChange,
+  onNewHoleNameChange,
+  onNewHoleLengthMetersChange,
+  onNewHoleParChange,
+  onNewHoleNotesChange,
+  onSubmitNewHole,
 }: PublicLayoutsPageProps) {
   return (
     <main className="content-page">
@@ -255,10 +281,105 @@ export function PublicLayoutsPage({
         <section className="admin-course-section">
           <div className="admin-section-header">
             <h3>Hål</h3>
-            <button className="primary-button" onClick={onAddHole}>
-              Lägg till hål
+
+            <button
+              className="primary-button"
+              onClick={() => onShowAddHoleFormChange(!showAddHoleForm)}
+            >
+              {showAddHoleForm ? 'Stäng formulär' : 'Lägg till hål'}
             </button>
           </div>
+
+          {showAddHoleForm && (
+            <form
+              className="admin-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onSubmitNewHole()
+              }}
+            >
+              <div className="admin-form-grid">
+                <label>
+                  Hålnummer
+                  <input
+                    type="number"
+                    min="1"
+                    value={newHoleNumber}
+                    onChange={(event) => onNewHoleNumberChange(event.target.value)}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Längd, meter
+                  <input
+                    type="number"
+                    min="1"
+                    value={newHoleLengthMeters}
+                    onChange={(event) =>
+                      onNewHoleLengthMetersChange(event.target.value)
+                    }
+                    required
+                  />
+                </label>
+
+                <label>
+                  Par
+                  <input
+                    type="number"
+                    min="1"
+                    value={newHolePar}
+                    onChange={(event) => onNewHoleParChange(event.target.value)}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Namn
+                  <input
+                    type="text"
+                    value={newHoleName}
+                    onChange={(event) => onNewHoleNameChange(event.target.value)}
+                    placeholder="Kan lämnas tomt"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Anteckning
+                <textarea
+                  value={newHoleNotes}
+                  onChange={(event) => onNewHoleNotesChange(event.target.value)}
+                  placeholder="Kan lämnas tomt"
+                  rows={3}
+                />
+              </label>
+
+              <div className="admin-form-actions">
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={isSavingHole}
+                >
+                  {isSavingHole ? 'Sparar…' : 'Spara hål'}
+                </button>
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => onShowAddHoleFormChange(false)}
+                  disabled={isSavingHole}
+                >
+                  Avbryt
+                </button>
+              </div>
+
+              <p className="muted-text">
+                När hålet sparas skapas automatiskt utkastet Standard, korgen Standard
+                och en standardvariant med samma längd och par.
+              </p>
+            </form>
+          )}
 
           {isLoadingHoles && <p>Laddar hål…</p>}
 

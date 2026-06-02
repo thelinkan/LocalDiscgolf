@@ -143,6 +143,14 @@ function App() {
   const [isLoadingCourseHoles, setIsLoadingCourseHoles] = useState(false)
   const [courseHolesError, setCourseHolesError] = useState<string | null>(null)
 
+  const [showAddHoleForm, setShowAddHoleForm] = useState(false)
+  const [newHoleNumber, setNewHoleNumber] = useState('')
+  const [newHoleName, setNewHoleName] = useState('')
+  const [newHoleLengthMeters, setNewHoleLengthMeters] = useState('')
+  const [newHolePar, setNewHolePar] = useState('3')
+  const [newHoleNotes, setNewHoleNotes] = useState('')
+  const [isSavingHole, setIsSavingHole] = useState(false)
+
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
@@ -231,6 +239,14 @@ function App() {
     setNewPassword('')
     setConfirmPassword('')
     setView('settings')
+  }
+
+  function resetNewHoleForm() {
+    setNewHoleNumber('')
+    setNewHoleName('')
+    setNewHoleLengthMeters('')
+    setNewHolePar('3')
+    setNewHoleNotes('')
   }
 
   async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -389,7 +405,20 @@ function App() {
               void changeIncludeInactiveLayouts(checked)
             }
             onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
-            onAddHole={() => {}}
+            showAddHoleForm={false}
+            newHoleNumber=""
+            newHoleName=""
+            newHoleLengthMeters=""
+            newHolePar="3"
+            newHoleNotes=""
+            isSavingHole={false}
+            onShowAddHoleFormChange={() => {}}
+            onNewHoleNumberChange={() => {}}
+            onNewHoleNameChange={() => {}}
+            onNewHoleLengthMetersChange={() => {}}
+            onNewHoleParChange={() => {}}
+            onNewHoleNotesChange={() => {}}
+            onSubmitNewHole={() => {}}
           />
         </div>
       )
@@ -696,6 +725,10 @@ function App() {
     setView('public_layouts')
     setIsLoadingPublicData(true)
     setPublicDataError(null)
+    setShowAddHoleForm(false)
+    resetNewHoleForm()
+    setCourseHoles([])
+    setCourseHolesError(null)
 
     if (isAdmin) {
       void loadCourseHoles(course.id)
@@ -711,74 +744,54 @@ function App() {
     }
   }
 
-  async function handleAddHole() {
+  async function handleSubmitNewHole() {
     if (!storedToken || !isAdmin || !selectedPublicCourse) {
       return
     }
 
-    const holeNumberText = window.prompt('Hålnummer:')
-
-    if (!holeNumberText) {
-      return
-    }
-
-    const holeNumber = Number(holeNumberText)
+    const holeNumber = Number(newHoleNumber)
+    const lengthMeters = Number(newHoleLengthMeters)
+    const parValue = Number(newHolePar)
 
     if (!Number.isInteger(holeNumber) || holeNumber <= 0) {
-      window.alert('Hålnummer måste vara ett positivt heltal.')
+      setCourseHolesError('Hålnummer måste vara ett positivt heltal.')
       return
     }
-
-    const lengthText = window.prompt('Längd i meter:')
-
-    if (!lengthText) {
-      return
-    }
-
-    const lengthMeters = Number(lengthText)
 
     if (!Number.isInteger(lengthMeters) || lengthMeters <= 0) {
-      window.alert('Längd måste vara ett positivt heltal.')
+      setCourseHolesError('Längd måste vara ett positivt heltal.')
       return
     }
-
-    const parText = window.prompt('Par:', '3')
-
-    if (!parText) {
-      return
-    }
-
-    const parValue = Number(parText)
 
     if (!Number.isInteger(parValue) || parValue <= 0) {
-      window.alert('Par måste vara ett positivt heltal.')
+      setCourseHolesError('Par måste vara ett positivt heltal.')
       return
     }
 
-    const nameInput = window.prompt('Namn på hålet, kan lämnas tomt:', '')
-    const notesInput = window.prompt('Anteckning, kan lämnas tomt:', '')
-
-    setIsLoadingCourseHoles(true)
+    setIsSavingHole(true)
     setCourseHolesError(null)
 
     try {
       await createHole(storedToken, selectedPublicCourse.id, {
         hole_number: holeNumber,
-        name: nameInput?.trim() ? nameInput.trim() : null,
+        name: newHoleName.trim() ? newHoleName.trim() : null,
         length_meters: lengthMeters,
         par_value: parValue,
-        notes: notesInput?.trim() ? notesInput.trim() : null,
+        notes: newHoleNotes.trim() ? newHoleNotes.trim() : null,
       })
 
       await loadCourseHoles(selectedPublicCourse.id)
 
-      // Uppdatera banlistans layout/hål-räknare om användaren går tillbaka.
-      await openPublicCourses(includeInactiveCourses)
-      setView('public_layouts')
+      resetNewHoleForm()
+      setShowAddHoleForm(false)
+
+      // Uppdatera banlistans hålräknare i bakgrunden.
+      const courses = await getPublicCourses(includeInactiveCourses)
+      setPublicCourses(courses)
     } catch (error) {
       setCourseHolesError(apiErrorText(error, 'Kunde inte skapa hål.'))
     } finally {
-      setIsLoadingCourseHoles(false)
+      setIsSavingHole(false)
     }
   }
 
@@ -1007,7 +1020,20 @@ function App() {
             void changeIncludeInactiveLayouts(checked)
           }
           onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
-          onAddHole={() => void handleAddHole()}
+          showAddHoleForm={showAddHoleForm}
+          newHoleNumber={newHoleNumber}
+          newHoleName={newHoleName}
+          newHoleLengthMeters={newHoleLengthMeters}
+          newHolePar={newHolePar}
+          newHoleNotes={newHoleNotes}
+          isSavingHole={isSavingHole}
+          onShowAddHoleFormChange={setShowAddHoleForm}
+          onNewHoleNumberChange={setNewHoleNumber}
+          onNewHoleNameChange={setNewHoleName}
+          onNewHoleLengthMetersChange={setNewHoleLengthMeters}
+          onNewHoleParChange={setNewHolePar}
+          onNewHoleNotesChange={setNewHoleNotes}
+          onSubmitNewHole={() => void handleSubmitNewHole()}
         />
       )}
 

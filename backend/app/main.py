@@ -92,6 +92,10 @@ class HoleUpdateRequest(BaseModel):
 class HoleTeeCreateRequest(BaseModel):
     name: str
 
+class HoleTeeUpdateRequest(BaseModel):
+    name: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
 
 class HoleBasketCreateRequest(BaseModel):
     name: str
@@ -2277,7 +2281,10 @@ def delete_hole(
     }
 
 @app.get("/holes/{hole_id}/tees")
-def get_hole_tees(hole_id: int) -> list[dict]:
+def get_hole_tees(
+    hole_id: int,
+    include_inactive: bool = False,
+) -> list[dict]:
     get_hole(hole_id)
 
     return fetch_all(
@@ -2290,9 +2297,16 @@ def get_hole_tees(hole_id: int) -> list[dict]:
             is_active
         FROM hole_tee
         WHERE hole_id = :hole_id
-        ORDER BY sort_order, name
+          AND (:include_inactive = 1 OR is_active = 1)
+        ORDER BY
+            is_active DESC,
+            sort_order,
+            name
         """,
-        {"hole_id": hole_id},
+        {
+            "hole_id": hole_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
     )
 
 
@@ -2389,6 +2403,112 @@ def create_hole_tee(
 
     return get_hole_tee(int(tee_id))
 
+@app.patch("/tees/{tee_id}")
+def update_hole_tee(
+    tee_id: int,
+    request: HoleTeeUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    tee = fetch_one(
+        """
+        SELECT id
+        FROM hole_tee
+        WHERE id = :tee_id
+        """,
+        {"tee_id": tee_id},
+    )
+
+    if not tee:
+        raise HTTPException(status_code=404, detail="Tee not found")
+
+    if (
+        request.name is None
+        and request.sort_order is None
+        and request.is_active is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    execute_write(
+        """
+        UPDATE hole_tee
+        SET
+            name = COALESCE(:name, name),
+            sort_order = COALESCE(:sort_order, sort_order),
+            is_active = COALESCE(:is_active, is_active)
+        WHERE id = :tee_id
+        """,
+        {
+            "tee_id": tee_id,
+            "name": request.name,
+            "sort_order": request.sort_order,
+            "is_active": (
+                None
+                if request.is_active is None
+                else 1 if request.is_active else 0
+            ),
+        },
+    )
+
+    return get_hole_tee(tee_id)
+
+@app.delete("/tees/{tee_id}")
+def delete_hole_tee(
+    tee_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    tee = fetch_one(
+        """
+        SELECT
+            id,
+            hole_id,
+            name
+        FROM hole_tee
+        WHERE id = :tee_id
+        """,
+        {"tee_id": tee_id},
+    )
+
+    if not tee:
+        raise HTTPException(status_code=404, detail="Tee not found")
+
+    variant_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM hole_variant
+        WHERE tee_id = :tee_id
+        """,
+        {"tee_id": tee_id},
+    )
+
+    if variant_usage and int(variant_usage["count_value"]) > 0:
+        execute_write(
+            """
+            UPDATE hole_tee
+            SET is_active = 0
+            WHERE id = :tee_id
+            """,
+            {"tee_id": tee_id},
+        )
+
+        return {
+            "message": "Tee is used and was deactivated instead of deleted",
+            "action": "deactivated",
+            "id": tee_id,
+        }
+
+    execute_write(
+        """
+        DELETE FROM hole_tee
+        WHERE id = :tee_id
+        """,
+        {"tee_id": tee_id},
+    )
+
+    return {
+        "message": "Tee deleted",
+        "action": "deleted",
+        "id": tee_id,
+    }
 
 @app.post("/holes/{hole_id}/baskets")
 def create_hole_basket(

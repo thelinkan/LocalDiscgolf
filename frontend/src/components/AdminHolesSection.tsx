@@ -8,6 +8,7 @@ import {
   type PublicCourseApiResponse,
   type PublicCourseHoleApiResponse,
 } from '../api'
+import AdminTeesSection from './AdminTeesSection'
 
 interface AdminHolesSectionProps {
   course: PublicCourseApiResponse
@@ -280,44 +281,51 @@ export default function AdminHolesSection({
                   onIsActiveChange={setEditHoleIsActive}
                 />
               ) : (
-                <>
-                  <div>
-                    <strong>
-                      Hål {hole.hole_number}
-                      {hole.name ? ` - ${hole.name}` : ''}
-                    </strong>
-                    <p>
-                      {hole.length_meters} m · Par {hole.par_value}
-                    </p>
-                    {hole.notes && (
-                      <p className="public-description">{hole.notes}</p>
-                    )}
-                  </div>
+                <div className="admin-hole-content">
+                    <div className="admin-hole-main-row">
+                        <div>
+                        <strong>
+                            Hål {hole.hole_number}
+                            {hole.name ? ` - ${hole.name}` : ''}
+                        </strong>
+                        <p>
+                            {hole.length_meters} m · Par {hole.par_value}
+                        </p>
+                        {hole.notes && (
+                            <p className="public-description">{hole.notes}</p>
+                        )}
+                        </div>
 
-                  <div className="admin-row-actions">
-                    {hole.is_active === 0 && (
-                      <span className="inactive-badge">Inaktiv</span>
-                    )}
+                        <div className="admin-row-actions">
+                        {hole.is_active === 0 && (
+                            <span className="inactive-badge">Inaktiv</span>
+                        )}
 
-                    <button
-                      className="icon-action-button"
-                      title="Redigera hål"
-                      onClick={() => startEditHole(hole)}
-                      disabled={isSaving}
-                    >
-                      ✎
-                    </button>
+                        <button
+                            className="icon-action-button"
+                            title="Redigera hål"
+                            onClick={() => startEditHole(hole)}
+                            disabled={isSaving}
+                        >
+                            ✎
+                        </button>
 
-                    <button
-                      className="icon-action-button danger"
-                      title="Radera eller inaktivera hål"
-                      onClick={() => void handleDeleteHole(hole)}
-                      disabled={isSaving}
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </>
+                        <button
+                            className="icon-action-button danger"
+                            title="Radera eller inaktivera hål"
+                            onClick={() => void handleDeleteHole(hole)}
+                            disabled={isSaving}
+                        >
+                            🗑
+                        </button>
+                        </div>
+                    </div>
+
+                    <AdminTeesSection
+                        hole={hole}
+                        token={token}
+                    />
+                    </div>
               )}
             </div>
           ))}

@@ -545,3 +545,79 @@ export async function createHole(
 
   return parseResponse<PublicCourseHoleApiResponse>(response)
 }
+
+export interface HoleTeeApiResponse {
+  id: number
+  hole_id: number
+  name: string
+  sort_order: number
+  is_active: number
+}
+
+export interface HoleTeeCreateRequest {
+  name: string
+}
+
+export interface HoleTeeUpdateRequest {
+  name?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export async function getHoleTees(
+  holeId: number,
+  includeInactive = false,
+): Promise<HoleTeeApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/tees${query}`)
+
+  return parseResponse<HoleTeeApiResponse[]>(response)
+}
+
+export async function createHoleTee(
+  token: string,
+  holeId: number,
+  requestBody: HoleTeeCreateRequest,
+): Promise<HoleTeeApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/tees`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleTeeApiResponse>(response)
+}
+
+export async function updateHoleTee(
+  token: string,
+  teeId: number,
+  requestBody: HoleTeeUpdateRequest,
+): Promise<HoleTeeApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/tees/${teeId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleTeeApiResponse>(response)
+}
+
+export async function deleteHoleTee(
+  token: string,
+  teeId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/tees/${teeId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
+}

@@ -113,6 +113,7 @@ export interface PublicLayoutHoleApiResponse {
   hole_id: number
   hole_number: number
   hole_name: string | null
+  hole_variant_id: number | null
   tee_name: string | null
   basket_name: string | null
   length_meters: number
@@ -689,6 +690,98 @@ export async function deleteHoleBasket(
   basketId: number,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/baskets/${basketId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
+}
+
+export interface CourseHoleVariantApiResponse {
+  hole_id: number
+  hole_number: number
+  hole_name: string | null
+  hole_is_active: number
+  hole_variant_id: number
+  tee_id: number | null
+  tee_name: string | null
+  basket_id: number | null
+  basket_name: string | null
+  length_meters: number
+  par_value: number
+  variant_is_active: number
+}
+
+export interface LayoutHoleRequest {
+  hole_id: number
+  hole_variant_id: number | null
+  sequence_number?: number
+}
+
+export interface LayoutCreateRequest {
+  name: string
+  description?: string | null
+  holes: LayoutHoleRequest[]
+}
+
+export interface LayoutUpdateRequest {
+  name?: string
+  description?: string | null
+  is_active?: boolean
+  holes?: LayoutHoleRequest[]
+}
+
+export async function getCourseHoleVariants(
+  courseId: number,
+  includeInactive = false,
+): Promise<CourseHoleVariantApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/hole-variants${query}`)
+
+  return parseResponse<CourseHoleVariantApiResponse[]>(response)
+}
+
+export async function createLayout(
+  token: string,
+  courseId: number,
+  requestBody: LayoutCreateRequest,
+): Promise<PublicLayoutApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/layouts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicLayoutApiResponse>(response)
+}
+
+export async function updateLayout(
+  token: string,
+  layoutId: number,
+  requestBody: LayoutUpdateRequest,
+): Promise<PublicLayoutApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/layouts/${layoutId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicLayoutApiResponse>(response)
+}
+
+export async function deleteLayout(
+  token: string,
+  layoutId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/layouts/${layoutId}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,

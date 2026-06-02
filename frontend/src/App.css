@@ -1086,3 +1086,62 @@
 .admin-hole-content .nested-admin-section + .nested-admin-section {
   margin-top: 2px;
 }
+
+.layout-builder {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.compact-header {
+  margin-bottom: 10px;
+}
+
+.layout-builder-row {
+  align-items: center;
+  border-top: 1px solid #edf2ed;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 34px 1fr auto auto auto;
+  padding: 10px 0;
+}
+
+.layout-builder-row:first-of-type {
+  border-top: none;
+}
+
+.layout-builder-row select {
+  background: #ffffff;
+  border: 1px solid #cfd9ce;
+  border-radius: 10px;
+  font: inherit;
+  padding: 10px 11px;
+}
+
+.layout-sequence-number {
+  align-items: center;
+  background: #eef4ed;
+  border-radius: 999px;
+  display: inline-flex;
+  font-weight: 700;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.form-checkbox {
+  align-self: end;
+  padding-bottom: 10px;
+}
+
+@media (max-width: 750px) {
+  .layout-builder-row {
+    align-items: stretch;
+    grid-template-columns: 34px 1fr;
+  }
+
+  .layout-builder-row button {
+    grid-column: 2;
+  }
+}

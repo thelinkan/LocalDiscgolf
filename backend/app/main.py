@@ -112,16 +112,22 @@ class HoleVariantCreateRequest(BaseModel):
     par_value: int
 
 
-class LayoutHoleCreateRequest(BaseModel):
+class LayoutHoleRequest(BaseModel):
     hole_id: int
     hole_variant_id: int | None = None
     sequence_number: int | None = None
 
 
+class LayoutUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    holes: list[LayoutHoleRequest] | None = None
+
 class LayoutCreateRequest(BaseModel):
     name: str
     description: str | None = None
-    holes: list[LayoutHoleCreateRequest]
+    holes: list[LayoutHoleRequest]
 
 
 # =========================
@@ -859,6 +865,61 @@ def get_layout_holes(layout_id: int) -> list[dict]:
 
     return holes
 
+def prepare_layout_holes(course_id: int, holes: list[LayoutHoleRequest]) -> list[dict]:
+    if not holes:
+        raise HTTPException(
+            status_code=400,
+            detail="Layout must contain at least one hole",
+        )
+
+    seen_sequences: set[int] = set()
+    prepared_holes: list[dict] = []
+
+    for index, layout_hole in enumerate(holes, start=1):
+        sequence_number = layout_hole.sequence_number or index
+
+        if sequence_number in seen_sequences:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate sequence number: {sequence_number}",
+            )
+
+        seen_sequences.add(sequence_number)
+
+        hole = get_hole(layout_hole.hole_id)
+        ensure_hole_belongs_to_course(hole, course_id)
+
+        if not bool(hole["is_active"]):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Hole {layout_hole.hole_id} is inactive",
+            )
+
+        if layout_hole.hole_variant_id is None:
+            variant = get_single_active_variant_for_hole(layout_hole.hole_id)
+            hole_variant_id = int(variant["id"])
+        else:
+            variant = get_hole_variant(layout_hole.hole_variant_id)
+            ensure_variant_belongs_to_hole(variant, layout_hole.hole_id)
+
+            if not bool(variant["is_active"]):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Hole variant {layout_hole.hole_variant_id} is inactive",
+                )
+
+            hole_variant_id = int(layout_hole.hole_variant_id)
+
+        prepared_holes.append(
+            {
+                "sequence_number": sequence_number,
+                "hole_id": int(layout_hole.hole_id),
+                "hole_variant_id": hole_variant_id,
+            }
+        )
+
+    return sorted(prepared_holes, key=lambda row: row["sequence_number"])
+
 # =========================
 # Lösenord
 # =========================
@@ -1011,6 +1072,58 @@ def get_course_holes(
         },
     )
 
+@app.get("/courses/{course_id}/hole-variants")
+def get_course_hole_variants(
+    course_id: int,
+    include_inactive: bool = False,
+) -> list[dict]:
+    course = fetch_one(
+        """
+        SELECT id
+        FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return fetch_all(
+        """
+        SELECT
+            h.id AS hole_id,
+            h.hole_number,
+            h.name AS hole_name,
+            h.is_active AS hole_is_active,
+            hv.id AS hole_variant_id,
+            hv.tee_id,
+            ht.name AS tee_name,
+            hv.basket_id,
+            hb.name AS basket_name,
+            hv.length_meters,
+            hv.par_value,
+            hv.is_active AS variant_is_active
+        FROM hole h
+        INNER JOIN hole_variant hv
+            ON hv.hole_id = h.id
+        LEFT JOIN hole_tee ht
+            ON ht.id = hv.tee_id
+        LEFT JOIN hole_basket hb
+            ON hb.id = hv.basket_id
+        WHERE h.course_id = :course_id
+          AND (:include_inactive = 1 OR (h.is_active = 1 AND hv.is_active = 1))
+        ORDER BY
+            h.hole_number,
+            ht.sort_order,
+            hb.sort_order,
+            hv.id
+        """,
+        {
+            "course_id": course_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
+    )
 
 @app.get("/layouts/{layout_id}")
 def get_layout_endpoint(layout_id: int) -> dict:
@@ -1033,6 +1146,174 @@ def get_layout_endpoint(layout_id: int) -> dict:
         raise HTTPException(status_code=404, detail="Layout not found")
     return layout
 
+@app.patch("/layouts/{layout_id}")
+def update_layout(
+    layout_id: int,
+    request: LayoutUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    layout = fetch_one(
+        """
+        SELECT
+            id,
+            course_id,
+            name,
+            description,
+            is_active
+        FROM layout
+        WHERE id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+
+    if (
+        request.name is None
+        and request.description is None
+        and request.is_active is None
+        and request.holes is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    prepared_holes: list[dict] | None = None
+
+    if request.holes is not None:
+        prepared_holes = prepare_layout_holes(int(layout["course_id"]), request.holes)
+
+    def _update_layout_tx(conn):
+        tx_execute_write(
+            conn,
+            """
+            UPDATE layout
+            SET
+                name = COALESCE(:name, name),
+                description = COALESCE(:description, description),
+                is_active = COALESCE(:is_active, is_active)
+            WHERE id = :layout_id
+            """,
+            {
+                "layout_id": layout_id,
+                "name": request.name,
+                "description": request.description,
+                "is_active": (
+                    None
+                    if request.is_active is None
+                    else 1 if request.is_active else 0
+                ),
+            },
+        )
+
+        if prepared_holes is not None:
+            tx_execute_write(
+                conn,
+                """
+                DELETE FROM layout_hole
+                WHERE layout_id = :layout_id
+                """,
+                {"layout_id": layout_id},
+            )
+
+            for prepared_hole in prepared_holes:
+                tx_execute_write(
+                    conn,
+                    """
+                    INSERT INTO layout_hole (
+                        layout_id,
+                        sequence_number,
+                        hole_id,
+                        hole_variant_id
+                    )
+                    VALUES (
+                        :layout_id,
+                        :sequence_number,
+                        :hole_id,
+                        :hole_variant_id
+                    )
+                    """,
+                    {
+                        "layout_id": layout_id,
+                        "sequence_number": prepared_hole["sequence_number"],
+                        "hole_id": prepared_hole["hole_id"],
+                        "hole_variant_id": prepared_hole["hole_variant_id"],
+                    },
+                )
+
+    run_in_transaction(_update_layout_tx)
+    return get_layout_endpoint(layout_id)
+
+@app.delete("/layouts/{layout_id}")
+def delete_layout(
+    layout_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    layout = fetch_one(
+        """
+        SELECT
+            id,
+            name,
+            is_active
+        FROM layout
+        WHERE id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+
+    round_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM session_player
+        WHERE layout_id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+
+    if round_usage and int(round_usage["count_value"]) > 0:
+        execute_write(
+            """
+            UPDATE layout
+            SET is_active = 0
+            WHERE id = :layout_id
+            """,
+            {"layout_id": layout_id},
+        )
+
+        return {
+            "message": "Layout is used and was deactivated instead of deleted",
+            "action": "deactivated",
+            "id": layout_id,
+        }
+
+    def _delete_layout_tx(conn):
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM layout_hole
+            WHERE layout_id = :layout_id
+            """,
+            {"layout_id": layout_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM layout
+            WHERE id = :layout_id
+            """,
+            {"layout_id": layout_id},
+        )
+
+    run_in_transaction(_delete_layout_tx)
+
+    return {
+        "message": "Layout deleted",
+        "action": "deleted",
+        "id": layout_id,
+    }
 
 @app.get("/layouts/{layout_id}/holes")
 def get_layout_holes_endpoint(layout_id: int) -> list[dict]:
@@ -2776,58 +3057,7 @@ def create_layout(
     current_user: dict = Depends(require_admin),
 ) -> dict:
     get_course(course_id)
-
-    if not request.holes:
-        raise HTTPException(
-            status_code=400,
-            detail="Layout must contain at least one hole",
-        )
-
-    seen_sequences: set[int] = set()
-    prepared_holes: list[dict] = []
-
-    for index, layout_hole in enumerate(request.holes, start=1):
-        sequence_number = layout_hole.sequence_number or index
-
-        if sequence_number in seen_sequences:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Duplicate sequence number: {sequence_number}",
-            )
-
-        seen_sequences.add(sequence_number)
-
-        hole = get_hole(layout_hole.hole_id)
-        ensure_hole_belongs_to_course(hole, course_id)
-
-        if not bool(hole["is_active"]):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Hole {layout_hole.hole_id} is inactive",
-            )
-
-        if layout_hole.hole_variant_id is None:
-            variant = get_single_active_variant_for_hole(layout_hole.hole_id)
-            hole_variant_id = int(variant["id"])
-        else:
-            variant = get_hole_variant(layout_hole.hole_variant_id)
-            ensure_variant_belongs_to_hole(variant, layout_hole.hole_id)
-
-            if not bool(variant["is_active"]):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Hole variant {layout_hole.hole_variant_id} is inactive",
-                )
-
-            hole_variant_id = layout_hole.hole_variant_id
-
-        prepared_holes.append(
-            {
-                "sequence_number": sequence_number,
-                "hole_id": layout_hole.hole_id,
-                "hole_variant_id": hole_variant_id,
-            }
-        )
+    prepared_holes = prepare_layout_holes(course_id, request.holes)
 
     def _create_layout_tx(conn):
         layout_id = tx_execute_write(

@@ -4,6 +4,7 @@ import type {
   PublicLayoutHoleApiResponse,
 } from '../api'
 import AdminHolesSection from './AdminHolesSection'
+import AdminLayoutsSection from './AdminLayoutsSection'
 
 interface PublicCoursesPageProps {
   courses: PublicCourseApiResponse[]
@@ -217,6 +218,14 @@ export function PublicLayoutsPage({
 
       {isAdmin && adminToken && (
         <AdminHolesSection
+          course={course}
+          token={adminToken}
+          onCourseChanged={onCourseChanged}
+        />
+      )}
+
+      {isAdmin && adminToken && (
+        <AdminLayoutsSection
           course={course}
           token={adminToken}
           onCourseChanged={onCourseChanged}

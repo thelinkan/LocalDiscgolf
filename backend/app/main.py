@@ -961,10 +961,23 @@ def get_course_layouts(course_id: int, include_inactive: bool = False) -> list[d
 
 
 @app.get("/courses/{course_id}/holes")
-def get_course_holes(course_id: int) -> list[dict]:
-    get_course(course_id)
-    return fetch_all(
+def get_course_holes(
+    course_id: int,
+    include_inactive: bool = False,
+) -> list[dict]:
+    course = fetch_one(
         """
+        SELECT id
+        FROM course
+        WHERE id = :course_id
+        """,
+        {"course_id": course_id},
+    )
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    sql = """
         SELECT
             h.id,
             h.course_id,
@@ -976,10 +989,18 @@ def get_course_holes(course_id: int) -> list[dict]:
             h.is_active
         FROM hole h
         WHERE h.course_id = :course_id
-          AND h.is_active = 1
-        ORDER BY h.hole_number
-        """,
-        {"course_id": course_id},
+          AND (:include_inactive = 1 OR h.is_active = 1)
+        ORDER BY
+            h.is_active DESC,
+            h.hole_number
+    """
+
+    return fetch_all(
+        sql,
+        {
+            "course_id": course_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
     )
 
 
@@ -2082,7 +2103,17 @@ def update_hole(
     request: HoleUpdateRequest,
     current_user: dict = Depends(require_admin),
 ) -> dict:
-    get_hole(hole_id)
+    hole = fetch_one(
+        """
+        SELECT id
+        FROM hole
+        WHERE id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    if not hole:
+        raise HTTPException(status_code=404, detail="Hole not found")
 
     if (
         request.hole_number is None
@@ -2124,6 +2155,126 @@ def update_hole(
     )
 
     return get_hole(hole_id)
+
+@app.delete("/holes/{hole_id}")
+def delete_hole(
+    hole_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    hole = fetch_one(
+        """
+        SELECT
+            id,
+            course_id,
+            hole_number,
+            name,
+            is_active
+        FROM hole
+        WHERE id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    if not hole:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    layout_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM layout_hole
+        WHERE hole_id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    round_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM session_player_hole
+        WHERE hole_id = :hole_id
+        """,
+        {"hole_id": hole_id},
+    )
+
+    is_used = (
+        int(layout_usage["count_value"]) > 0
+        or int(round_usage["count_value"]) > 0
+    )
+
+    if is_used:
+        execute_write(
+            """
+            UPDATE hole
+            SET
+                is_active = 0,
+                updated_by_user_id = :user_id
+            WHERE id = :hole_id
+            """,
+            {
+                "hole_id": hole_id,
+                "user_id": current_user["id"],
+            },
+        )
+
+        execute_write(
+            """
+            UPDATE hole_variant
+            SET is_active = 0
+            WHERE hole_id = :hole_id
+            """,
+            {"hole_id": hole_id},
+        )
+
+        return {
+            "message": "Hole is used and was deactivated instead of deleted",
+            "action": "deactivated",
+            "id": hole_id,
+        }
+
+    def _delete_hole_tx(conn):
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM hole_variant
+            WHERE hole_id = :hole_id
+            """,
+            {"hole_id": hole_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM hole_tee
+            WHERE hole_id = :hole_id
+            """,
+            {"hole_id": hole_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM hole_basket
+            WHERE hole_id = :hole_id
+            """,
+            {"hole_id": hole_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM hole
+            WHERE id = :hole_id
+            """,
+            {"hole_id": hole_id},
+        )
+
+    run_in_transaction(_delete_hole_tx)
+
+    return {
+        "message": "Hole deleted",
+        "action": "deleted",
+        "id": hole_id,
+    }
 
 @app.get("/holes/{hole_id}/tees")
 def get_hole_tees(hole_id: int) -> list[dict]:

@@ -975,3 +975,33 @@
     flex-direction: column;
   }
 }
+
+.admin-header-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.admin-row-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.admin-form.full-width {
+  width: 100%;
+}
+
+.admin-form h4 {
+  margin: 0;
+}
+
+.admin-hole-row .admin-form {
+  margin: 0;
+}
+
+.icon-action-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

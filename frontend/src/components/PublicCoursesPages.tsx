@@ -1,9 +1,9 @@
 import type {
   PublicCourseApiResponse,
-  PublicCourseHoleApiResponse,
   PublicLayoutApiResponse,
   PublicLayoutHoleApiResponse,
 } from '../api'
+import AdminHolesSection from './AdminHolesSection'
 
 interface PublicCoursesPageProps {
   courses: PublicCourseApiResponse[]
@@ -160,28 +160,13 @@ interface PublicLayoutsPageProps {
   layouts: PublicLayoutApiResponse[]
   includeInactive: boolean
   isAdmin: boolean
-  holes: PublicCourseHoleApiResponse[]
-  isLoadingHoles: boolean
-  holesError: string | null
   isLoading: boolean
   error: string | null
   onBack: () => void
   onIncludeInactiveChange: (checked: boolean) => void
   onLayoutClick: (layout: PublicLayoutApiResponse) => void
-  showAddHoleForm: boolean
-  newHoleNumber: string
-  newHoleName: string
-  newHoleLengthMeters: string
-  newHolePar: string
-  newHoleNotes: string
-  isSavingHole: boolean
-  onShowAddHoleFormChange: (show: boolean) => void
-  onNewHoleNumberChange: (value: string) => void
-  onNewHoleNameChange: (value: string) => void
-  onNewHoleLengthMetersChange: (value: string) => void
-  onNewHoleParChange: (value: string) => void
-  onNewHoleNotesChange: (value: string) => void
-  onSubmitNewHole: () => void
+  adminToken: string | null
+  onCourseChanged: () => void
 }
 
 export function PublicLayoutsPage({
@@ -189,28 +174,13 @@ export function PublicLayoutsPage({
   layouts,
   includeInactive,
   isAdmin,
-  holes,
-  isLoadingHoles,
-  holesError,
   isLoading,
   error,
   onBack,
   onIncludeInactiveChange,
   onLayoutClick,
-  showAddHoleForm,
-  newHoleNumber,
-  newHoleName,
-  newHoleLengthMeters,
-  newHolePar,
-  newHoleNotes,
-  isSavingHole,
-  onShowAddHoleFormChange,
-  onNewHoleNumberChange,
-  onNewHoleNameChange,
-  onNewHoleLengthMetersChange,
-  onNewHoleParChange,
-  onNewHoleNotesChange,
-  onSubmitNewHole,
+  adminToken,
+  onCourseChanged,
 }: PublicLayoutsPageProps) {
   return (
     <main className="content-page">
@@ -245,6 +215,14 @@ export function PublicLayoutsPage({
         </section>
       )}
 
+      {isAdmin && adminToken && (
+        <AdminHolesSection
+          course={course}
+          token={adminToken}
+          onCourseChanged={onCourseChanged}
+        />
+      )}
+
       {!isLoading && !error && layouts.length > 0 && (
         <section className="public-list">
           {layouts.map((layout) => (
@@ -277,149 +255,7 @@ export function PublicLayoutsPage({
         </section>
       )}
 
-      {isAdmin && (
-        <section className="admin-course-section">
-          <div className="admin-section-header">
-            <h3>Hål</h3>
 
-            <button
-              className="primary-button"
-              onClick={() => onShowAddHoleFormChange(!showAddHoleForm)}
-            >
-              {showAddHoleForm ? 'Stäng formulär' : 'Lägg till hål'}
-            </button>
-          </div>
-
-          {showAddHoleForm && (
-            <form
-              className="admin-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                onSubmitNewHole()
-              }}
-            >
-              <div className="admin-form-grid">
-                <label>
-                  Hålnummer
-                  <input
-                    type="number"
-                    min="1"
-                    value={newHoleNumber}
-                    onChange={(event) => onNewHoleNumberChange(event.target.value)}
-                    required
-                  />
-                </label>
-
-                <label>
-                  Längd, meter
-                  <input
-                    type="number"
-                    min="1"
-                    value={newHoleLengthMeters}
-                    onChange={(event) =>
-                      onNewHoleLengthMetersChange(event.target.value)
-                    }
-                    required
-                  />
-                </label>
-
-                <label>
-                  Par
-                  <input
-                    type="number"
-                    min="1"
-                    value={newHolePar}
-                    onChange={(event) => onNewHoleParChange(event.target.value)}
-                    required
-                  />
-                </label>
-
-                <label>
-                  Namn
-                  <input
-                    type="text"
-                    value={newHoleName}
-                    onChange={(event) => onNewHoleNameChange(event.target.value)}
-                    placeholder="Kan lämnas tomt"
-                  />
-                </label>
-              </div>
-
-              <label>
-                Anteckning
-                <textarea
-                  value={newHoleNotes}
-                  onChange={(event) => onNewHoleNotesChange(event.target.value)}
-                  placeholder="Kan lämnas tomt"
-                  rows={3}
-                />
-              </label>
-
-              <div className="admin-form-actions">
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={isSavingHole}
-                >
-                  {isSavingHole ? 'Sparar…' : 'Spara hål'}
-                </button>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => onShowAddHoleFormChange(false)}
-                  disabled={isSavingHole}
-                >
-                  Avbryt
-                </button>
-              </div>
-
-              <p className="muted-text">
-                När hålet sparas skapas automatiskt utkastet Standard, korgen Standard
-                och en standardvariant med samma längd och par.
-              </p>
-            </form>
-          )}
-
-          {isLoadingHoles && <p>Laddar hål…</p>}
-
-          {holesError && <p className="error-message">{holesError}</p>}
-
-          {!isLoadingHoles && !holesError && holes.length === 0 && (
-            <p className="muted-text">Inga hål finns på banan ännu.</p>
-          )}
-
-          {!isLoadingHoles && !holesError && holes.length > 0 && (
-            <div className="admin-hole-list">
-              {holes.map((hole) => (
-                <div
-                  key={hole.id}
-                  className={`admin-hole-row ${
-                    hole.is_active === 0 ? 'inactive-card' : ''
-                  }`}
-                >
-                  <div>
-                    <strong>
-                      Hål {hole.hole_number}
-                      {hole.name ? ` - ${hole.name}` : ''}
-                    </strong>
-                    <p>
-                      {hole.length_meters} m · Par {hole.par_value}
-                    </p>
-                    {hole.notes && (
-                      <p className="public-description">{hole.notes}</p>
-                    )}
-                  </div>
-
-                  {hole.is_active === 0 && (
-                    <span className="inactive-badge">Inaktiv</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
     </main>
   )
 }

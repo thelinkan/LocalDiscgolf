@@ -395,9 +395,7 @@ function App() {
             layouts={publicLayouts}
             includeInactive={includeInactiveLayouts}
             isAdmin={false}
-            holes={[]}
-            isLoadingHoles={false}
-            holesError={null}
+            adminToken={null}
             isLoading={isLoadingPublicData}
             error={publicDataError}
             onBack={() => setView('public_courses')}
@@ -405,20 +403,7 @@ function App() {
               void changeIncludeInactiveLayouts(checked)
             }
             onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
-            showAddHoleForm={false}
-            newHoleNumber=""
-            newHoleName=""
-            newHoleLengthMeters=""
-            newHolePar="3"
-            newHoleNotes=""
-            isSavingHole={false}
-            onShowAddHoleFormChange={() => {}}
-            onNewHoleNumberChange={() => {}}
-            onNewHoleNameChange={() => {}}
-            onNewHoleLengthMetersChange={() => {}}
-            onNewHoleParChange={() => {}}
-            onNewHoleNotesChange={() => {}}
-            onSubmitNewHole={() => {}}
+            onCourseChanged={() => {}}
           />
         </div>
       )
@@ -1010,9 +995,7 @@ function App() {
           layouts={publicLayouts}
           includeInactive={includeInactiveLayouts}
           isAdmin={isAdmin}
-          holes={courseHoles}
-          isLoadingHoles={isLoadingCourseHoles}
-          holesError={courseHolesError}
+          adminToken={isAdmin ? storedToken : null}
           isLoading={isLoadingPublicData}
           error={publicDataError}
           onBack={() => setView('public_courses')}
@@ -1020,20 +1003,9 @@ function App() {
             void changeIncludeInactiveLayouts(checked)
           }
           onLayoutClick={(layout) => void openPublicLayoutDetail(layout)}
-          showAddHoleForm={showAddHoleForm}
-          newHoleNumber={newHoleNumber}
-          newHoleName={newHoleName}
-          newHoleLengthMeters={newHoleLengthMeters}
-          newHolePar={newHolePar}
-          newHoleNotes={newHoleNotes}
-          isSavingHole={isSavingHole}
-          onShowAddHoleFormChange={setShowAddHoleForm}
-          onNewHoleNumberChange={setNewHoleNumber}
-          onNewHoleNameChange={setNewHoleName}
-          onNewHoleLengthMetersChange={setNewHoleLengthMeters}
-          onNewHoleParChange={setNewHolePar}
-          onNewHoleNotesChange={setNewHoleNotes}
-          onSubmitNewHole={() => void handleSubmitNewHole()}
+          onCourseChanged={() => {
+            void openPublicCourses(includeInactiveCourses)
+          }}
         />
       )}
 

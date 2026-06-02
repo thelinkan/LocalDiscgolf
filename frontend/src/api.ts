@@ -481,10 +481,52 @@ export async function deleteCourse(
 
 export async function getCourseHoles(
   courseId: number,
+  includeInactive = false,
 ): Promise<PublicCourseHoleApiResponse[]> {
-  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/holes`)
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/courses/${courseId}/holes${query}`)
 
   return parseResponse<PublicCourseHoleApiResponse[]>(response)
+}
+
+export interface HoleUpdateRequest {
+  hole_number?: number
+  name?: string | null
+  length_meters?: number
+  par_value?: number
+  notes?: string | null
+  is_active?: boolean
+}
+
+export async function updateHole(
+  token: string,
+  holeId: number,
+  requestBody: HoleUpdateRequest,
+): Promise<PublicCourseHoleApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<PublicCourseHoleApiResponse>(response)
+}
+
+export async function deleteHole(
+  token: string,
+  holeId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
 }
 
 export async function createHole(

@@ -100,6 +100,10 @@ class HoleTeeUpdateRequest(BaseModel):
 class HoleBasketCreateRequest(BaseModel):
     name: str
 
+class HoleBasketUpdateRequest(BaseModel):
+    name: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
 
 class HoleVariantCreateRequest(BaseModel):
     tee_id: int
@@ -2311,7 +2315,10 @@ def get_hole_tees(
 
 
 @app.get("/holes/{hole_id}/baskets")
-def get_hole_baskets(hole_id: int) -> list[dict]:
+def get_hole_baskets(
+    hole_id: int,
+    include_inactive: bool = False,
+) -> list[dict]:
     get_hole(hole_id)
 
     return fetch_all(
@@ -2324,11 +2331,167 @@ def get_hole_baskets(hole_id: int) -> list[dict]:
             is_active
         FROM hole_basket
         WHERE hole_id = :hole_id
-        ORDER BY sort_order, name
+          AND (:include_inactive = 1 OR is_active = 1)
+        ORDER BY
+            is_active DESC,
+            sort_order,
+            name
+        """,
+        {
+            "hole_id": hole_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
+    )
+
+@app.post("/holes/{hole_id}/baskets")
+def create_hole_basket(
+    hole_id: int,
+    request: HoleBasketCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    max_sort = fetch_one(
+        """
+        SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order
+        FROM hole_basket
+        WHERE hole_id = :hole_id
         """,
         {"hole_id": hole_id},
     )
 
+    next_sort_order = int(max_sort["max_sort_order"]) + 1 if max_sort else 1
+
+    basket_id = execute_write(
+        """
+        INSERT INTO hole_basket (
+            hole_id,
+            name,
+            sort_order,
+            is_active
+        )
+        VALUES (
+            :hole_id,
+            :name,
+            :sort_order,
+            1
+        )
+        """,
+        {
+            "hole_id": hole_id,
+            "name": request.name,
+            "sort_order": next_sort_order,
+        },
+    )
+
+    return get_hole_basket(int(basket_id))
+
+@app.patch("/baskets/{basket_id}")
+def update_hole_basket(
+    basket_id: int,
+    request: HoleBasketUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    basket = fetch_one(
+        """
+        SELECT id
+        FROM hole_basket
+        WHERE id = :basket_id
+        """,
+        {"basket_id": basket_id},
+    )
+
+    if not basket:
+        raise HTTPException(status_code=404, detail="Basket not found")
+
+    if (
+        request.name is None
+        and request.sort_order is None
+        and request.is_active is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    execute_write(
+        """
+        UPDATE hole_basket
+        SET
+            name = COALESCE(:name, name),
+            sort_order = COALESCE(:sort_order, sort_order),
+            is_active = COALESCE(:is_active, is_active)
+        WHERE id = :basket_id
+        """,
+        {
+            "basket_id": basket_id,
+            "name": request.name,
+            "sort_order": request.sort_order,
+            "is_active": (
+                None
+                if request.is_active is None
+                else 1 if request.is_active else 0
+            ),
+        },
+    )
+
+    return get_hole_basket(basket_id)
+
+@app.delete("/baskets/{basket_id}")
+def delete_hole_basket(
+    basket_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    basket = fetch_one(
+        """
+        SELECT
+            id,
+            hole_id,
+            name
+        FROM hole_basket
+        WHERE id = :basket_id
+        """,
+        {"basket_id": basket_id},
+    )
+
+    if not basket:
+        raise HTTPException(status_code=404, detail="Basket not found")
+
+    variant_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM hole_variant
+        WHERE basket_id = :basket_id
+        """,
+        {"basket_id": basket_id},
+    )
+
+    if variant_usage and int(variant_usage["count_value"]) > 0:
+        execute_write(
+            """
+            UPDATE hole_basket
+            SET is_active = 0
+            WHERE id = :basket_id
+            """,
+            {"basket_id": basket_id},
+        )
+
+        return {
+            "message": "Basket is used and was deactivated instead of deleted",
+            "action": "deactivated",
+            "id": basket_id,
+        }
+
+    execute_write(
+        """
+        DELETE FROM hole_basket
+        WHERE id = :basket_id
+        """,
+        {"basket_id": basket_id},
+    )
+
+    return {
+        "message": "Basket deleted",
+        "action": "deleted",
+        "id": basket_id,
+    }
 
 @app.get("/holes/{hole_id}/variants")
 def get_hole_variants(hole_id: int) -> list[dict]:

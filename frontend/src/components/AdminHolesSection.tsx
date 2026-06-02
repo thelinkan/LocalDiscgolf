@@ -9,6 +9,7 @@ import {
   type PublicCourseHoleApiResponse,
 } from '../api'
 import AdminTeesSection from './AdminTeesSection'
+import AdminBasketsSection from './AdminBasketsSection'
 
 interface AdminHolesSectionProps {
   course: PublicCourseApiResponse
@@ -322,6 +323,11 @@ export default function AdminHolesSection({
                     </div>
 
                     <AdminTeesSection
+                        hole={hole}
+                        token={token}
+                    />
+
+                    <AdminBasketsSection
                         hole={hole}
                         token={token}
                     />

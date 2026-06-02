@@ -621,3 +621,79 @@ export async function deleteHoleTee(
 
   await parseResponse<unknown>(response)
 }
+
+export interface HoleBasketApiResponse {
+  id: number
+  hole_id: number
+  name: string
+  sort_order: number
+  is_active: number
+}
+
+export interface HoleBasketCreateRequest {
+  name: string
+}
+
+export interface HoleBasketUpdateRequest {
+  name?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export async function getHoleBaskets(
+  holeId: number,
+  includeInactive = false,
+): Promise<HoleBasketApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/baskets${query}`)
+
+  return parseResponse<HoleBasketApiResponse[]>(response)
+}
+
+export async function createHoleBasket(
+  token: string,
+  holeId: number,
+  requestBody: HoleBasketCreateRequest,
+): Promise<HoleBasketApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/baskets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleBasketApiResponse>(response)
+}
+
+export async function updateHoleBasket(
+  token: string,
+  basketId: number,
+  requestBody: HoleBasketUpdateRequest,
+): Promise<HoleBasketApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/baskets/${basketId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleBasketApiResponse>(response)
+}
+
+export async function deleteHoleBasket(
+  token: string,
+  basketId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/baskets/${basketId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
+}

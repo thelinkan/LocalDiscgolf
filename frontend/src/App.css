@@ -1082,3 +1082,7 @@
     grid-template-columns: 1fr;
   }
 }
+
+.admin-hole-content .nested-admin-section + .nested-admin-section {
+  margin-top: 2px;
+}

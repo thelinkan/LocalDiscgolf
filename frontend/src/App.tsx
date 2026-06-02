@@ -135,12 +135,6 @@ function App() {
 
   const [includeInactiveCourses, setIncludeInactiveCourses] = useState(false)
 
-  const [newHoleNumber, setNewHoleNumber] = useState('')
-  const [newHoleName, setNewHoleName] = useState('')
-  const [newHoleLengthMeters, setNewHoleLengthMeters] = useState('')
-  const [newHolePar, setNewHolePar] = useState('3')
-  const [newHoleNotes, setNewHoleNotes] = useState('')
-
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {

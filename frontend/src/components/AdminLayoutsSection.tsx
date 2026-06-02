@@ -23,6 +23,17 @@ interface EditableLayoutHole {
   holeVariantId: string
 }
 
+function createLocalId(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export default function AdminLayoutsSection({
   course,
   token,
@@ -85,7 +96,7 @@ export default function AdminLayoutsSection({
     setLayoutHoles((current) => [
       ...current,
       {
-        localId: crypto.randomUUID(),
+        localId: createLocalId(),
         holeVariantId: firstVariant ? String(firstVariant.hole_variant_id) : '',
       },
     ])
@@ -141,7 +152,7 @@ export default function AdminLayoutsSection({
       setIsActive(layout.is_active === 1)
       setLayoutHoles(
         holes.map((hole) => ({
-          localId: crypto.randomUUID(),
+          localId: createLocalId(),
           holeVariantId:
             hole.hole_variant_id !== null ? String(hole.hole_variant_id) : '',
         })),

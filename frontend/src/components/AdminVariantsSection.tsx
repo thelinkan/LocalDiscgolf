@@ -73,13 +73,21 @@ export default function AdminVariantsSection({
     }
   }
 
-  function activeTees() {
-    return tees.filter((tee) => tee.is_active === 1)
-  }
+    function selectableTees() {
+    if (includeInactivePositions) {
+        return tees
+    }
 
-  function activeBaskets() {
+    return tees.filter((tee) => tee.is_active === 1)
+    }
+
+    function selectableBaskets() {
+    if (includeInactivePositions) {
+        return baskets
+    }
+
     return baskets.filter((basket) => basket.is_active === 1)
-  }
+    }
 
   function resetNewForm() {
     setNewTeeId('')
@@ -238,8 +246,8 @@ export default function AdminVariantsSection({
       {showAddForm && (
         <VariantForm
           title="Skapa hålvariant"
-          tees={activeTees()}
-          baskets={activeBaskets()}
+          tees={selectableTees()}
+          baskets={selectableBaskets()}
           teeId={newTeeId}
           basketId={newBasketId}
           lengthMeters={newLengthMeters}

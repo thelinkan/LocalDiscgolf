@@ -707,6 +707,43 @@ def build_round_detail_response(round_id: int) -> dict:
     round_row["players"] = players
     return round_row
 
+def can_edit_round(current_user: dict, round_id: int) -> bool:
+    if current_user["role"] == "admin":
+        return True
+
+    rnd = get_round(round_id)
+
+    if int(current_user["id"]) == int(rnd["created_by_user_id"]):
+        return True
+
+    editable_player = fetch_one(
+        """
+        SELECT
+            sp.id
+        FROM session_player sp
+        INNER JOIN user_player_permission upp
+            ON upp.player_id = sp.player_id
+        WHERE sp.play_session_id = :round_id
+          AND upp.user_id = :user_id
+          AND upp.permission_level IN ('auto_approve', 'propose')
+          AND sp.approval_state <> 'approved'
+        LIMIT 1
+        """,
+        {
+            "round_id": round_id,
+            "user_id": current_user["id"],
+        },
+    )
+
+    return editable_player is not None
+
+
+def require_round_edit_permission(current_user: dict, round_id: int) -> None:
+    if not can_edit_round(current_user, round_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to edit this round",
+        )
 
 # =========================
 # Statistik-hjälpare
@@ -1785,7 +1822,7 @@ def update_round(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     rnd = get_round(round_id)
-    require_round_owner_or_admin(current_user, rnd)
+    require_round_edit_permission(current_user, round_id)
 
     if (
         request.started_at is None

@@ -1159,3 +1159,70 @@
   outline: 2px solid #4f9956;
   outline-offset: 1px;
 }
+
+.round-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.round-edit-card {
+  background: #ffffff;
+  border: 1px solid #e2e9e1;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.round-edit-card h3 {
+  margin: 0 0 14px;
+}
+
+.admin-form-grid.three-columns {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+}
+
+.round-edit-card input,
+.round-edit-card select {
+  background: #ffffff;
+  border: 1px solid #cfd9ce;
+  border-radius: 10px;
+  font: inherit;
+  padding: 10px 11px;
+}
+
+.score-input {
+  background: #ffffff;
+  border: 1px solid #cfd9ce;
+  border-radius: 8px;
+  font: inherit;
+  max-width: 58px;
+  padding: 7px 6px;
+  text-align: center;
+}
+
+.editable-scorecard-table td {
+  vertical-align: middle;
+}
+
+.danger-button {
+  color: #9f2f25;
+}
+
+.danger-button:hover {
+  background: #fdecea;
+  border-color: #efb8b2;
+}
+
+.sticky-actions {
+  background: #f4f7f3;
+  bottom: 0;
+  border-top: 1px solid #e0e7df;
+  padding: 12px 0;
+  position: sticky;
+}
+
+@media (max-width: 750px) {
+  .admin-form-grid.three-columns {
+    grid-template-columns: 1fr;
+  }
+}

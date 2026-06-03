@@ -1,18 +1,47 @@
+import { type FormEvent, useEffect, useState } from 'react'
 import type {
   RoundDetailApiResponse,
   RoundDetailHoleApiResponse,
   RoundDetailPlayerApiResponse,
+  RoundUpdateRequest,
 } from '../api'
 
 interface RoundDetailPageProps {
   round: RoundDetailApiResponse | null
+  currentUserId: number | null
+  currentUserRole: string | null
+  canEdit: boolean
+  canDelete: boolean
   isLoading: boolean
   error: string | null
   onBack: () => void
+  onSaveRound: (request: RoundUpdateRequest) => Promise<void>
+  onDeleteRound: () => Promise<void>
+}
+
+interface EditableScore {
+  sessionPlayerHoleId: number
+  value: string
 }
 
 function formatDateTime(value: string): string {
   return value.replace('T', ' ').slice(0, 16)
+}
+
+function toDatetimeLocal(value: string | null): string {
+  if (!value) {
+    return ''
+  }
+
+  return value.slice(0, 16)
+}
+
+function fromDatetimeLocal(value: string): string | null {
+  if (value.trim() === '') {
+    return null
+  }
+
+  return value
 }
 
 function formatRelativeScore(value: number): string {
@@ -26,6 +55,10 @@ function roundStatusText(status: string): string {
 
   if (status === 'in_progress') {
     return 'Pågående'
+  }
+
+  if (status === 'cancelled') {
+    return 'Avbruten'
   }
 
   return status
@@ -65,10 +98,132 @@ function playerSummary(player: RoundDetailPlayerApiResponse) {
 
 export default function RoundDetailPage({
   round,
+  canEdit,
+  canDelete,
   isLoading,
   error,
   onBack,
+  onSaveRound,
+  onDeleteRound,
 }: RoundDetailPageProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [startedAt, setStartedAt] = useState('')
+  const [endedAt, setEndedAt] = useState('')
+  const [status, setStatus] = useState('completed')
+  const [scores, setScores] = useState<EditableScore[]>([])
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (!round) {
+      return
+    }
+
+    setStartedAt(toDatetimeLocal(round.started_at))
+    setEndedAt(toDatetimeLocal(round.ended_at))
+    setStatus(round.status)
+
+    const editableScores = round.players.flatMap((player) =>
+      player.holes.map((hole) => ({
+        sessionPlayerHoleId: hole.id,
+        value: hole.throws_count === null ? '' : String(hole.throws_count),
+      })),
+    )
+
+    setScores(editableScores)
+  }, [round])
+
+  function scoreValue(sessionPlayerHoleId: number): string {
+    return (
+      scores.find((score) => score.sessionPlayerHoleId === sessionPlayerHoleId)
+        ?.value ?? ''
+    )
+  }
+
+  function setScoreValue(sessionPlayerHoleId: number, value: string) {
+    setScores((current) =>
+      current.map((score) =>
+        score.sessionPlayerHoleId === sessionPlayerHoleId
+          ? { ...score, value }
+          : score,
+      ),
+    )
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    setSaveError(null)
+
+    const preparedScores = scores.map((score) => {
+      const trimmed = score.value.trim()
+
+      if (trimmed === '') {
+        return {
+          session_player_hole_id: score.sessionPlayerHoleId,
+          throws_count: null,
+        }
+      }
+
+      const throwsCount = Number(trimmed)
+
+      if (!Number.isInteger(throwsCount) || throwsCount <= 0) {
+        throw new Error('Alla ifyllda resultat måste vara positiva heltal.')
+      }
+
+      return {
+        session_player_hole_id: score.sessionPlayerHoleId,
+        throws_count: throwsCount,
+      }
+    })
+
+    setIsSaving(true)
+
+    try {
+      await onSaveRound({
+        started_at: fromDatetimeLocal(startedAt) ?? undefined,
+        ended_at: fromDatetimeLocal(endedAt),
+        status,
+        scores: preparedScores,
+      })
+
+      setIsEditing(false)
+    } catch (err) {
+      if (err instanceof Error) {
+        setSaveError(err.message)
+      } else {
+        setSaveError('Kunde inte spara rundan.')
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    const confirmed = window.confirm(
+      'Vill du radera rundan? Detta tar bort rundan och alla resultat i den.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      await onDeleteRound()
+    } catch (err) {
+      if (err instanceof Error) {
+        setSaveError(err.message)
+      } else {
+        setSaveError('Kunde inte radera rundan.')
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="content-page">
@@ -122,11 +277,33 @@ export default function RoundDetailPage({
 
   return (
     <main className="content-page">
-      <div className="page-toolbar">
+      <div className="page-toolbar player-page-toolbar">
         <button className="secondary-button" onClick={onBack}>
           Tillbaka
         </button>
+
         <h2>Runddetalj</h2>
+
+        <div className="player-view-buttons">
+          {canEdit && !isEditing && (
+            <button
+              className="primary-button"
+              onClick={() => setIsEditing(true)}
+            >
+              Redigera runda
+            </button>
+          )}
+
+          {canDelete && !isEditing && (
+            <button
+              className="secondary-button danger-button"
+              onClick={() => void handleDelete()}
+              disabled={isSaving}
+            >
+              Radera runda
+            </button>
+          )}
+        </div>
       </div>
 
       <section className="round-detail-header">
@@ -138,42 +315,193 @@ export default function RoundDetailPage({
 
         <p>Start: {formatDateTime(round.started_at)}</p>
 
-        {round.ended_at && (
-          <p>Slut: {formatDateTime(round.ended_at)}</p>
-        )}
+        {round.ended_at && <p>Slut: {formatDateTime(round.ended_at)}</p>}
 
         <p>Status: {roundStatusText(round.status)}</p>
       </section>
 
-      <section className="round-summary-card">
-        <h3>Resultat</h3>
+      {saveError && <p className="error-message">{saveError}</p>}
 
-        {players.map((player) => {
-          const summary = playerSummary(player)
+      {isEditing ? (
+        <form className="round-edit-form" onSubmit={(event) => void handleSave(event)}>
+          <section className="round-edit-card">
+            <h3>Rundinformation</h3>
 
-          return (
-            <div className="round-player-summary" key={player.id}>
-              <span>{player.player_name}</span>
-              <strong>
-                {formatRelativeScore(summary.relativeToPar)} ({summary.totalThrows})
-              </strong>
+            <div className="admin-form-grid three-columns">
+              <label>
+                Starttid
+                <input
+                  type="datetime-local"
+                  value={startedAt}
+                  onChange={(event) => setStartedAt(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label>
+                Sluttid
+                <input
+                  type="datetime-local"
+                  value={endedAt}
+                  onChange={(event) => setEndedAt(event.target.value)}
+                />
+              </label>
+
+              <label>
+                Status
+                <select
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                >
+                  <option value="in_progress">Pågående</option>
+                  <option value="completed">Avslutad</option>
+                  <option value="cancelled">Avbruten</option>
+                </select>
+              </label>
             </div>
-          )
-        })}
-      </section>
+          </section>
 
-      <section className="scorecard-section">
-        <h3>Scorekort</h3>
+          <section className="scorecard-section">
+            <h3>Resultat</h3>
 
-        {holeChunks.map((holeChunk, chunkIndex) => (
-          <ScorecardBlock
-            key={chunkIndex}
-            holeChunk={holeChunk}
-            players={players}
-          />
-        ))}
-      </section>
+            {holeChunks.map((holeChunk, chunkIndex) => (
+              <EditableScorecardBlock
+                key={chunkIndex}
+                holeChunk={holeChunk}
+                players={players}
+                scoreValue={scoreValue}
+                setScoreValue={setScoreValue}
+              />
+            ))}
+          </section>
+
+          <div className="admin-form-actions sticky-actions">
+            <button className="primary-button" type="submit" disabled={isSaving}>
+              {isSaving ? 'Sparar…' : 'Spara runda'}
+            </button>
+
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={isSaving}
+            >
+              Avbryt
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <section className="round-summary-card">
+            <h3>Resultat</h3>
+
+            {players.map((player) => {
+              const summary = playerSummary(player)
+
+              return (
+                <div className="round-player-summary" key={player.id}>
+                  <span>{player.player_name}</span>
+                  <strong>
+                    {formatRelativeScore(summary.relativeToPar)} (
+                    {summary.totalThrows})
+                  </strong>
+                </div>
+              )
+            })}
+          </section>
+
+          <section className="scorecard-section">
+            <h3>Scorekort</h3>
+
+            {holeChunks.map((holeChunk, chunkIndex) => (
+              <ScorecardBlock
+                key={chunkIndex}
+                holeChunk={holeChunk}
+                players={players}
+              />
+            ))}
+          </section>
+        </>
+      )}
     </main>
+  )
+}
+
+function EditableScorecardBlock({
+  holeChunk,
+  players,
+  scoreValue,
+  setScoreValue,
+}: {
+  holeChunk: RoundDetailHoleApiResponse[]
+  players: RoundDetailPlayerApiResponse[]
+  scoreValue: (sessionPlayerHoleId: number) => string
+  setScoreValue: (sessionPlayerHoleId: number, value: string) => void
+}) {
+  return (
+    <div className="scorecard-scroll">
+      <table className="scorecard-table editable-scorecard-table">
+        <thead>
+          <tr>
+            <th>Hål</th>
+            {holeChunk.map((hole) => (
+              <th key={`hole-${hole.sequence_number}`}>
+                {hole.hole_number_snapshot}
+              </th>
+            ))}
+          </tr>
+
+          <tr>
+            <th>Längd</th>
+            {holeChunk.map((hole) => (
+              <th key={`length-${hole.sequence_number}`}>
+                {hole.length_snapshot_meters}
+              </th>
+            ))}
+          </tr>
+
+          <tr>
+            <th>Par</th>
+            {holeChunk.map((hole) => (
+              <th key={`par-${hole.sequence_number}`}>{hole.par_snapshot}</th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {players.map((player) => (
+            <tr key={player.id}>
+              <td className="scorecard-player-name">{player.player_name}</td>
+
+              {holeChunk.map((hole) => {
+                const playerHole = player.holes.find(
+                  (candidate) =>
+                    candidate.sequence_number === hole.sequence_number,
+                )
+
+                if (!playerHole) {
+                  return <td key={`${player.id}-${hole.sequence_number}`}>-</td>
+                }
+
+                return (
+                  <td key={`${player.id}-${hole.sequence_number}`}>
+                    <input
+                      className="score-input"
+                      type="number"
+                      min="1"
+                      value={scoreValue(playerHole.id)}
+                      onChange={(event) =>
+                        setScoreValue(playerHole.id, event.target.value)
+                      }
+                    />
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -209,9 +537,7 @@ function ScorecardBlock({
           <tr>
             <th>Par</th>
             {holeChunk.map((hole) => (
-              <th key={`par-${hole.sequence_number}`}>
-                {hole.par_snapshot}
-              </th>
+              <th key={`par-${hole.sequence_number}`}>{hole.par_snapshot}</th>
             ))}
           </tr>
         </thead>
@@ -281,9 +607,5 @@ function ScoreBadge({
           ? 'score-double'
           : 'score-even'
 
-  return (
-    <span className={`score-badge ${scoreClass}`}>
-      {throwsCount}
-    </span>
-  )
+  return <span className={`score-badge ${scoreClass}`}>{throwsCount}</span>
 }

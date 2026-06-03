@@ -17,6 +17,8 @@ import {
   createCourse,
   deleteCourse,
   updateCourse,
+  updateRound,
+  deleteRound,
   changePassword,
   login,
   type CourseApiResponse,
@@ -29,6 +31,7 @@ import {
   type PublicCourseApiResponse,
   type PublicLayoutApiResponse,
   type PublicLayoutHoleApiResponse,
+  type RoundUpdateRequest,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -745,6 +748,61 @@ function App() {
     }
   }
 
+  function canEditSelectedRound(): boolean {
+    if (!user || !selectedRound) {
+      return false
+    }
+
+    if (user.role === 'admin') {
+      return true
+    }
+
+    if (user.id === selectedRound.created_by_user_id) {
+      return true
+    }
+
+    return selectedRound.players.some(
+      (player) =>
+        player.added_by_user_id === user.id &&
+        player.approval_state !== 'approved',
+    )
+  }
+
+  function canDeleteSelectedRound(): boolean {
+    if (!user || !selectedRound) {
+      return false
+    }
+
+    return user.role === 'admin' || user.id === selectedRound.created_by_user_id
+  }
+
+  async function handleSaveRoundUpdate(request: RoundUpdateRequest) {
+    if (!storedToken || !selectedRound) {
+      return
+    }
+
+    const updatedRound = await updateRound(storedToken, selectedRound.id, request)
+    setSelectedRound(updatedRound)
+
+    if (selectedPlayer) {
+      const rounds = await getPlayerRounds(storedToken, selectedPlayer.id)
+      setPlayerRounds(rounds)
+    }
+  }
+
+  async function handleDeleteSelectedRound() {
+    if (!storedToken || !selectedRound || !selectedPlayer) {
+      return
+    }
+
+    await deleteRound(storedToken, selectedRound.id)
+
+    const rounds = await getPlayerRounds(storedToken, selectedPlayer.id)
+    setPlayerRounds(rounds)
+    setSelectedRound(null)
+    setView('player_rounds')
+  }
+
   return (
     <div className="page">
       <header className="app-header">
@@ -868,9 +926,15 @@ function App() {
       {view === 'round_detail' && (
         <RoundDetailPage
           round={selectedRound}
+          currentUserId={user?.id ?? null}
+          currentUserRole={user?.role ?? null}
+          canEdit={canEditSelectedRound()}
+          canDelete={canDeleteSelectedRound()}
           isLoading={isLoadingRoundDetail}
           error={roundDetailError}
           onBack={() => setView('player_rounds')}
+          onSaveRound={handleSaveRoundUpdate}
+          onDeleteRound={handleDeleteSelectedRound}
         />
       )}
 

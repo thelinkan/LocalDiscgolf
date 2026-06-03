@@ -54,6 +54,16 @@ class HoleScoreUpdate(BaseModel):
     player_id: int = Field(gt=0)
     throws_count: int | None = Field(default=None, ge=1)
 
+class RoundHoleScoreUpdateRequest(BaseModel):
+    session_player_hole_id: int
+    throws_count: int | None = None
+
+
+class RoundUpdateRequest(BaseModel):
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    status: str | None = None
+    scores: list[RoundHoleScoreUpdateRequest] | None = None
 
 class UpdateHoleRequest(BaseModel):
     scores: list[HoleScoreUpdate] = Field(min_length=1)
@@ -387,6 +397,39 @@ def require_round_viewer(round_id: int, current_user: dict) -> dict:
 
     raise HTTPException(status_code=403, detail="Not allowed to view this round")
 
+def delete_round_data(round_id: int) -> None:
+    def _delete_tx(conn):
+        tx_execute_write(
+            conn,
+            """
+            DELETE sph
+            FROM session_player_hole sph
+            INNER JOIN session_player sp
+                ON sp.id = sph.session_player_id
+            WHERE sp.play_session_id = :round_id
+            """,
+            {"round_id": round_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM session_player
+            WHERE play_session_id = :round_id
+            """,
+            {"round_id": round_id},
+        )
+
+        tx_execute_write(
+            conn,
+            """
+            DELETE FROM play_session
+            WHERE id = :round_id
+            """,
+            {"round_id": round_id},
+        )
+
+    run_in_transaction(_delete_tx)
 
 def get_session_player(round_id: int, player_id: int) -> dict | None:
     return fetch_one(
@@ -1735,6 +1778,128 @@ def get_round_endpoint(
     require_round_viewer(round_id, current_user)
     return build_round_detail_response(round_id)
 
+@app.patch("/rounds/{round_id}")
+def update_round(
+    round_id: int,
+    request: RoundUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    rnd = get_round(round_id)
+    require_round_owner_or_admin(current_user, rnd)
+
+    if (
+        request.started_at is None
+        and request.ended_at is None
+        and request.status is None
+        and request.scores is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    if request.status is not None and request.status not in (
+        "in_progress",
+        "completed",
+        "cancelled",
+    ):
+        raise HTTPException(status_code=400, detail="Invalid round status")
+
+    if request.scores is not None:
+        for score in request.scores:
+            if score.throws_count is not None and score.throws_count <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Throws count must be positive or null",
+                )
+
+        score_ids = [score.session_player_hole_id for score in request.scores]
+
+        if score_ids:
+            placeholders = ", ".join(
+                f":score_id_{index}" for index in range(len(score_ids))
+            )
+
+            params = {
+                "round_id": round_id,
+                **{
+                    f"score_id_{index}": score_id
+                    for index, score_id in enumerate(score_ids)
+                },
+            }
+
+            matching = fetch_one(
+                f"""
+                SELECT COUNT(*) AS count_value
+                FROM session_player_hole sph
+                INNER JOIN session_player sp
+                    ON sp.id = sph.session_player_id
+                WHERE sp.play_session_id = :round_id
+                  AND sph.id IN ({placeholders})
+                """,
+                params,
+            )
+
+            if int(matching["count_value"]) != len(score_ids):
+                raise HTTPException(
+                    status_code=400,
+                    detail="One or more score rows do not belong to this round",
+                )
+
+    def _update_tx(conn):
+        tx_execute_write(
+            conn,
+            """
+            UPDATE play_session
+            SET
+                started_at = COALESCE(:started_at, started_at),
+                ended_at = COALESCE(:ended_at, ended_at),
+                status = COALESCE(:status, status)
+            WHERE id = :round_id
+            """,
+            {
+                "round_id": round_id,
+                "started_at": request.started_at,
+                "ended_at": request.ended_at,
+                "status": request.status,
+            },
+        )
+
+        if request.scores is not None:
+            for score in request.scores:
+                tx_execute_write(
+                    conn,
+                    """
+                    UPDATE session_player_hole
+                    SET
+                        throws_count = :throws_count,
+                        is_completed = CASE
+                            WHEN :throws_count IS NULL THEN 0
+                            ELSE 1
+                        END
+                    WHERE id = :session_player_hole_id
+                    """,
+                    {
+                        "session_player_hole_id": score.session_player_hole_id,
+                        "throws_count": score.throws_count,
+                    },
+                )
+
+    run_in_transaction(_update_tx)
+
+    return get_round_endpoint(round_id, current_user)
+
+@app.delete("/rounds/{round_id}")
+def delete_round(
+    round_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    rnd = get_round(round_id)
+    require_round_owner_or_admin(current_user, rnd)
+
+    delete_round_data(round_id)
+
+    return {
+        "message": "Round deleted",
+        "id": round_id,
+    }
 
 @app.get("/rounds/{round_id}/current")
 def get_current_round_state(

@@ -876,3 +876,45 @@ export async function deleteHoleVariant(
   await parseResponse<unknown>(response)
 }
 
+export interface RoundHoleScoreUpdateRequest {
+  session_player_hole_id: number
+  throws_count: number | null
+}
+
+export interface RoundUpdateRequest {
+  started_at?: string
+  ended_at?: string | null
+  status?: string
+  scores?: RoundHoleScoreUpdateRequest[]
+}
+
+export async function updateRound(
+  token: string,
+  roundId: number,
+  requestBody: RoundUpdateRequest,
+): Promise<RoundDetailApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/rounds/${roundId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<RoundDetailApiResponse>(response)
+}
+
+export async function deleteRound(
+  token: string,
+  roundId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/rounds/${roundId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
+}

@@ -10,6 +10,7 @@ import {
 } from '../api'
 import AdminTeesSection from './AdminTeesSection'
 import AdminBasketsSection from './AdminBasketsSection'
+import AdminVariantsSection from './AdminVariantsSection'
 
 interface AdminHolesSectionProps {
   course: PublicCourseApiResponse
@@ -330,6 +331,11 @@ export default function AdminHolesSection({
                     <AdminBasketsSection
                         hole={hole}
                         token={token}
+                    />
+
+                    <AdminVariantsSection
+                      hole={hole}
+                      token={token}
                     />
                     </div>
               )}

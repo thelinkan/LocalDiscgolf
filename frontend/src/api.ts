@@ -790,3 +790,89 @@ export async function deleteLayout(
 
   await parseResponse<unknown>(response)
 }
+
+export interface HoleVariantApiResponse {
+  id: number
+  hole_id: number
+  tee_id: number
+  tee_name: string | null
+  basket_id: number
+  basket_name: string | null
+  length_meters: number
+  par_value: number
+  is_active: number
+}
+
+export interface HoleVariantCreateRequest {
+  tee_id: number
+  basket_id: number
+  length_meters: number
+  par_value: number
+}
+
+export interface HoleVariantUpdateRequest {
+  tee_id?: number
+  basket_id?: number
+  length_meters?: number
+  par_value?: number
+  is_active?: boolean
+}
+
+export async function getHoleVariants(
+  holeId: number,
+  includeInactive = false,
+): Promise<HoleVariantApiResponse[]> {
+  const query = includeInactive ? '?include_inactive=true' : ''
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/variants${query}`)
+
+  return parseResponse<HoleVariantApiResponse[]>(response)
+}
+
+export async function createHoleVariant(
+  token: string,
+  holeId: number,
+  requestBody: HoleVariantCreateRequest,
+): Promise<HoleVariantApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/holes/${holeId}/variants`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleVariantApiResponse>(response)
+}
+
+export async function updateHoleVariant(
+  token: string,
+  variantId: number,
+  requestBody: HoleVariantUpdateRequest,
+): Promise<HoleVariantApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/variants/${variantId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<HoleVariantApiResponse>(response)
+}
+
+export async function deleteHoleVariant(
+  token: string,
+  variantId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/variants/${variantId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  await parseResponse<unknown>(response)
+}
+

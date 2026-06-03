@@ -111,6 +111,12 @@ class HoleVariantCreateRequest(BaseModel):
     length_meters: int
     par_value: int
 
+class HoleVariantUpdateRequest(BaseModel):
+    tee_id: int | None = None
+    basket_id: int | None = None
+    length_meters: int | None = None
+    par_value: int | None = None
+    is_active: bool | None = None
 
 class LayoutHoleRequest(BaseModel):
     hole_id: int
@@ -2775,7 +2781,10 @@ def delete_hole_basket(
     }
 
 @app.get("/holes/{hole_id}/variants")
-def get_hole_variants(hole_id: int) -> list[dict]:
+def get_hole_variants(
+    hole_id: int,
+    include_inactive: bool = False,
+) -> list[dict]:
     get_hole(hole_id)
 
     return fetch_all(
@@ -2796,13 +2805,186 @@ def get_hole_variants(hole_id: int) -> list[dict]:
         LEFT JOIN hole_basket hb
             ON hb.id = hv.basket_id
         WHERE hv.hole_id = :hole_id
+          AND (:include_inactive = 1 OR hv.is_active = 1)
         ORDER BY
+            hv.is_active DESC,
             ht.sort_order,
             hb.sort_order,
             hv.id
         """,
-        {"hole_id": hole_id},
+        {
+            "hole_id": hole_id,
+            "include_inactive": 1 if include_inactive else 0,
+        },
     )
+
+@app.post("/holes/{hole_id}/variants")
+def create_hole_variant(
+    hole_id: int,
+    request: HoleVariantCreateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    get_hole(hole_id)
+
+    tee = get_hole_tee(request.tee_id)
+    basket = get_hole_basket(request.basket_id)
+
+    if int(tee["hole_id"]) != int(hole_id):
+        raise HTTPException(status_code=400, detail="Tee does not belong to hole")
+
+    if int(basket["hole_id"]) != int(hole_id):
+        raise HTTPException(status_code=400, detail="Basket does not belong to hole")
+
+    if not bool(tee["is_active"]):
+        raise HTTPException(status_code=400, detail="Tee is inactive")
+
+    if not bool(basket["is_active"]):
+        raise HTTPException(status_code=400, detail="Basket is inactive")
+
+    variant_id = execute_write(
+        """
+        INSERT INTO hole_variant (
+            hole_id,
+            tee_id,
+            basket_id,
+            length_meters,
+            par_value,
+            is_active
+        )
+        VALUES (
+            :hole_id,
+            :tee_id,
+            :basket_id,
+            :length_meters,
+            :par_value,
+            1
+        )
+        """,
+        {
+            "hole_id": hole_id,
+            "tee_id": request.tee_id,
+            "basket_id": request.basket_id,
+            "length_meters": request.length_meters,
+            "par_value": request.par_value,
+        },
+    )
+
+    return get_hole_variant(int(variant_id))
+
+@app.patch("/variants/{variant_id}")
+def update_hole_variant(
+    variant_id: int,
+    request: HoleVariantUpdateRequest,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    variant = get_hole_variant(variant_id)
+    hole_id = int(variant["hole_id"])
+
+    if (
+        request.tee_id is None
+        and request.basket_id is None
+        and request.length_meters is None
+        and request.par_value is None
+        and request.is_active is None
+    ):
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    if request.tee_id is not None:
+        tee = get_hole_tee(request.tee_id)
+        if int(tee["hole_id"]) != hole_id:
+            raise HTTPException(status_code=400, detail="Tee does not belong to hole")
+
+    if request.basket_id is not None:
+        basket = get_hole_basket(request.basket_id)
+        if int(basket["hole_id"]) != hole_id:
+            raise HTTPException(status_code=400, detail="Basket does not belong to hole")
+
+    execute_write(
+        """
+        UPDATE hole_variant
+        SET
+            tee_id = COALESCE(:tee_id, tee_id),
+            basket_id = COALESCE(:basket_id, basket_id),
+            length_meters = COALESCE(:length_meters, length_meters),
+            par_value = COALESCE(:par_value, par_value),
+            is_active = COALESCE(:is_active, is_active)
+        WHERE id = :variant_id
+        """,
+        {
+            "variant_id": variant_id,
+            "tee_id": request.tee_id,
+            "basket_id": request.basket_id,
+            "length_meters": request.length_meters,
+            "par_value": request.par_value,
+            "is_active": (
+                None
+                if request.is_active is None
+                else 1 if request.is_active else 0
+            ),
+        },
+    )
+
+    return get_hole_variant(variant_id)
+
+@app.delete("/variants/{variant_id}")
+def delete_hole_variant(
+    variant_id: int,
+    current_user: dict = Depends(require_admin),
+) -> dict:
+    variant = get_hole_variant(variant_id)
+
+    layout_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM layout_hole
+        WHERE hole_variant_id = :variant_id
+        """,
+        {"variant_id": variant_id},
+    )
+
+    round_usage = fetch_one(
+        """
+        SELECT COUNT(*) AS count_value
+        FROM session_player_hole
+        WHERE hole_variant_id = :variant_id
+        """,
+        {"variant_id": variant_id},
+    )
+
+    is_used = (
+        int(layout_usage["count_value"]) > 0
+        or int(round_usage["count_value"]) > 0
+    )
+
+    if is_used:
+        execute_write(
+            """
+            UPDATE hole_variant
+            SET is_active = 0
+            WHERE id = :variant_id
+            """,
+            {"variant_id": variant_id},
+        )
+
+        return {
+            "message": "Hole variant is used and was deactivated instead of deleted",
+            "action": "deactivated",
+            "id": variant_id,
+        }
+
+    execute_write(
+        """
+        DELETE FROM hole_variant
+        WHERE id = :variant_id
+        """,
+        {"variant_id": variant_id},
+    )
+
+    return {
+        "message": "Hole variant deleted",
+        "action": "deleted",
+        "id": variant_id,
+    }
 
 @app.post("/holes/{hole_id}/tees")
 def create_hole_tee(

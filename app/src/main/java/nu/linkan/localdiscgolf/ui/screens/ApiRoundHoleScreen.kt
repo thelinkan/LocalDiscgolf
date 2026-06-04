@@ -34,11 +34,15 @@ import androidx.compose.ui.unit.dp
 import nu.linkan.localdiscgolf.network.CurrentRoundApiResponse
 import nu.linkan.localdiscgolf.network.CurrentRoundHoleScoreApiResponse
 import nu.linkan.localdiscgolf.network.CurrentRoundSummaryApiResponse
+import nu.linkan.localdiscgolf.network.PlayerHoleStatsApiResponse
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApiRoundHoleScreen(
     currentRound: CurrentRoundApiResponse?,
+    holeStatsByPlayerId: Map<Long, PlayerHoleStatsApiResponse>,
+    isLoadingHoleStats: Boolean,
     onBack: () -> Unit,
     onPreviousHole: ((List<Pair<Long, Int?>>) -> Unit)?,
     onNextHole: ((List<Pair<Long, Int?>>) -> Unit)?,
@@ -196,6 +200,8 @@ fun ApiRoundHoleScreen(
                         ApiRoundPlayerThrowsRow(
                             score = score,
                             summary = summary,
+                            stats = holeStatsByPlayerId[score.player_id],
+                            isLoadingStats = isLoadingHoleStats,
                             value = inputValues[score.player_id] ?: "",
                             onValueChange = { newValue ->
                                 if (newValue.all { it.isDigit() }) {
@@ -237,6 +243,8 @@ fun ApiRoundHoleScreen(
 fun ApiRoundPlayerThrowsRow(
     score: CurrentRoundHoleScoreApiResponse,
     summary: CurrentRoundSummaryApiResponse?,
+    stats: PlayerHoleStatsApiResponse?,
+    isLoadingStats: Boolean,
     value: String,
     onValueChange: (String) -> Unit
 ) {
@@ -255,14 +263,41 @@ fun ApiRoundPlayerThrowsRow(
             )
         }
 
-        Text(
-            text = "Tidigare: 0 rundor, PB 0, snitt 0.00",
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            text = "Birdie+: 0  Par: 0  Bogey: 0  Dubbel: 0  Trippel+: 0",
-            style = MaterialTheme.typography.bodySmall
-        )
+        if (stats == null) {
+            Text(
+                text = if (isLoadingStats) {
+                    "Laddar statistik..."
+                } else {
+                    "Tidigare: 0 rundor, PB 0, snitt 0.00"
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Senaste 10: - (Svit: 0)",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Birdie+: 0  Par: 0  Bogey: 0  Dubbel: 0  Trippel+: 0",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            Text(
+                text = "Tidigare: ${stats.played_count} rundor, PB ${stats.personal_best_throws}, snitt ${formatAverage(stats.average_throws)}",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Senaste 10: ${formatOptionalAverage(stats.last_10_average_throws)} (Svit: ${formatStreak(stats.streak)})",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Birdie+: ${stats.birdie_or_better_count}  Par: ${stats.par_count}  Bogey: ${stats.bogey_count}  Dubbel: ${stats.double_bogey_count}  Trippel+: ${stats.triple_bogey_or_worse_count}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         OutlinedTextField(
             value = value,
@@ -271,6 +306,26 @@ fun ApiRoundPlayerThrowsRow(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+private fun formatAverage(value: Double): String {
+    return String.format(Locale.US, "%.2f", value)
+}
+
+private fun formatOptionalAverage(value: Double?): String {
+    return if (value == null) {
+        "-"
+    } else {
+        formatAverage(value)
+    }
+}
+
+private fun formatStreak(streak: Int): String {
+    return when {
+        streak > 0 -> "+$streak"
+        streak < 0 -> streak.toString()
+        else -> "0"
     }
 }
 

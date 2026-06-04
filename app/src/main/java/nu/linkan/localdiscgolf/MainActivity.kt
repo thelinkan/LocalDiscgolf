@@ -1438,14 +1438,72 @@ fun AppNavHost(
             val roundId = backStackEntry.arguments?.getLong("roundId") ?: return@composable
             val sequenceNumber = backStackEntry.arguments?.getInt("sequenceNumber") ?: return@composable
 
+            var holeStatsByPlayerId by remember(roundId, sequenceNumber) {
+                mutableStateOf<Map<Long, PlayerHoleStatsApiResponse>>(emptyMap())
+            }
+
+            var isLoadingHoleStats by remember(roundId, sequenceNumber) {
+                mutableStateOf(false)
+            }
+
             LaunchedEffect(roundId, sequenceNumber) {
                 onLoadApiRoundHole(roundId, sequenceNumber)
+            }
+
+            LaunchedEffect(
+                apiCurrentRound?.round?.id,
+                apiCurrentRound?.round?.course_id,
+                apiCurrentRound?.current_hole?.hole_variant_id,
+                apiCurrentRound?.current_hole?.sequence_number
+            ) {
+                val loadedRound = apiCurrentRound ?: return@LaunchedEffect
+
+                if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                    holeStatsByPlayerId = emptyMap()
+                    return@LaunchedEffect
+                }
+
+                isLoadingHoleStats = true
+
+                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                val currentHole = loadedRound.current_hole
+                val newStatsByPlayerId = mutableMapOf<Long, PlayerHoleStatsApiResponse>()
+
+                loadedRound.current_hole.scores.forEach { score ->
+                    val result = withContext(Dispatchers.IO) {
+                        ApiClient.getPlayerHoleStats(
+                            baseUrl = baseUrl,
+                            token = authToken,
+                            playerId = score.player_id,
+                            courseId = loadedRound.round.course_id
+                        )
+                    }
+
+                    result.onSuccess { statsRows ->
+                        val matchingStats = statsRows.firstOrNull { stats ->
+                            stats.hole_variant_id == currentHole.hole_variant_id
+                        } ?: statsRows.firstOrNull { stats ->
+                            stats.hole_id == currentHole.hole_id &&
+                                    stats.tee_name == currentHole.tee_name &&
+                                    stats.basket_name == currentHole.basket_name
+                        }
+
+                        if (matchingStats != null) {
+                            newStatsByPlayerId[score.player_id] = matchingStats
+                        }
+                    }
+                }
+
+                holeStatsByPlayerId = newStatsByPlayerId
+                isLoadingHoleStats = false
             }
 
             val totalHoles = apiCurrentRound?.progress?.total_holes ?: 0
 
             ApiRoundHoleScreen(
                 currentRound = apiCurrentRound,
+                holeStatsByPlayerId = holeStatsByPlayerId,
+                isLoadingHoleStats = isLoadingHoleStats,
                 onBack = { navController.popBackStack() },
 
                 onPreviousHole = if (sequenceNumber > 1) {

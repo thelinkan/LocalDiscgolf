@@ -918,3 +918,30 @@ export async function deleteRound(
 
   await parseResponse<unknown>(response)
 }
+
+export interface RoundPlayerCreateRequest {
+  player_id: number
+  layout_id: number
+}
+
+export interface CreateRoundRequest {
+  course_id: number
+  started_at: string
+  players: RoundPlayerCreateRequest[]
+}
+
+export async function createRound(
+  token: string,
+  requestBody: CreateRoundRequest,
+): Promise<RoundDetailApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/rounds`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  return parseResponse<RoundDetailApiResponse>(response)
+}

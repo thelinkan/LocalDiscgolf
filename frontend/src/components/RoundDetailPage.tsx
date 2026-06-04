@@ -11,12 +11,14 @@ interface RoundDetailPageProps {
   currentUserId: number | null
   currentUserRole: string | null
   canEdit: boolean
+  startInEditMode: boolean
   canDelete: boolean
   isLoading: boolean
   error: string | null
   onBack: () => void
   onSaveRound: (request: RoundUpdateRequest) => Promise<void>
   onDeleteRound: () => Promise<void>
+  onEditModeConsumed: () => void
 }
 
 interface EditableScore {
@@ -100,11 +102,13 @@ export default function RoundDetailPage({
   round,
   canEdit,
   canDelete,
+  startInEditMode,
   isLoading,
   error,
   onBack,
   onSaveRound,
   onDeleteRound,
+  onEditModeConsumed,
 }: RoundDetailPageProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [startedAt, setStartedAt] = useState('')
@@ -113,6 +117,13 @@ export default function RoundDetailPage({
   const [scores, setScores] = useState<EditableScore[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (round && startInEditMode && canEdit) {
+      setIsEditing(true)
+      onEditModeConsumed()
+    }
+  }, [round, startInEditMode, canEdit, onEditModeConsumed])
 
   useEffect(() => {
     if (!round) {

@@ -1226,3 +1226,25 @@
     grid-template-columns: 1fr;
   }
 }
+
+.new-round-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.player-checkbox-row {
+  align-items: center;
+  background: #f7faf6;
+  border: 1px solid #e2e9e1;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.player-checkbox-row input {
+  height: 18px;
+  width: 18px;
+}

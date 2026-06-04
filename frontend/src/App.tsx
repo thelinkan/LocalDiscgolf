@@ -17,6 +17,7 @@ import {
   createCourse,
   deleteCourse,
   updateCourse,
+  createRound,
   updateRound,
   deleteRound,
   changePassword,
@@ -31,6 +32,7 @@ import {
   type PublicCourseApiResponse,
   type PublicLayoutApiResponse,
   type PublicLayoutHoleApiResponse,
+  type CreateRoundRequest,
   type RoundUpdateRequest,
 } from './api'
 import PlayersPage, {
@@ -38,6 +40,7 @@ import PlayersPage, {
 } from './components/PlayersPage'
 import PlayerStatsPage from './components/PlayerStatsPage'
 import PlayerRoundsPage from './components/PlayerRoundsPage'
+import NewRoundPage from './components/NewRoundPage'
 import RoundDetailPage from './components/RoundDetailPage'
 import {
   PublicCoursesPage,
@@ -61,6 +64,7 @@ type AppView =
   | 'player_stats'
   | 'player_rounds'
   | 'round_detail'
+  | 'new_round'
   | 'public_courses'
   | 'public_layouts'
   | 'public_layout_detail'
@@ -137,6 +141,19 @@ function App() {
   const [publicDataError, setPublicDataError] = useState<string | null>(null)
 
   const [includeInactiveCourses, setIncludeInactiveCourses] = useState(false)
+
+  const [newRoundCourses, setNewRoundCourses] =
+    useState<PublicCourseApiResponse[]>([])
+
+  const [newRoundLayouts, setNewRoundLayouts] =
+    useState<PublicLayoutApiResponse[]>([])
+
+  const [isLoadingNewRoundCourses, setIsLoadingNewRoundCourses] = useState(false)
+  const [isLoadingNewRoundLayouts, setIsLoadingNewRoundLayouts] = useState(false)
+  const [isSavingNewRound, setIsSavingNewRound] = useState(false)
+  const [newRoundError, setNewRoundError] = useState<string | null>(null)
+  const [openCreatedRoundInEditMode, setOpenCreatedRoundInEditMode] =
+    useState(false)
 
   const isAdmin = user?.role === 'admin'
 
@@ -542,6 +559,7 @@ function App() {
       return
     }
 
+    setOpenCreatedRoundInEditMode(false)
     setView('round_detail')
     setSelectedRound(null)
     setIsLoadingRoundDetail(true)
@@ -803,6 +821,125 @@ function App() {
     setView('player_rounds')
   }
 
+  function selectablePlayersForNewRound(): SelectablePlayer[] {
+    if (!playersData) {
+      return []
+    }
+
+    const result: SelectablePlayer[] = []
+
+    if (playersData.own_player) {
+      result.push({
+        id: playersData.own_player.id,
+        name: playersData.own_player.name,
+        roundCount: playersData.own_player.round_count,
+        subtitle: 'Egen spelare',
+      })
+    }
+
+    for (const player of playersData.guest_players) {
+      result.push({
+        id: player.id,
+        name: player.name,
+        roundCount: player.round_count,
+        subtitle: 'Gästspelare',
+      })
+    }
+
+    for (const player of playersData.scoreable_players) {
+      result.push({
+        id: player.id,
+        name: player.name,
+        roundCount: player.round_count,
+        subtitle:
+          player.permission_level === 'auto_approve'
+            ? 'Kan scoreas direkt'
+            : 'Kan läggas in för godkännande',
+      })
+    }
+
+    return result
+  }
+
+  async function openNewRound() {
+    if (!storedToken || !user) {
+      return
+    }
+
+    setView('new_round')
+    setNewRoundError(null)
+    setNewRoundLayouts([])
+    setIsLoadingNewRoundCourses(true)
+
+    try {
+      const [courses, userPlayers] = await Promise.all([
+        getPublicCourses(false),
+        getUserPlayers(storedToken, user.username),
+      ])
+
+      setNewRoundCourses(courses)
+      setPlayersData(userPlayers)
+    } catch (error) {
+      setNewRoundError(apiErrorText(error, 'Kunde inte ladda ny runda.'))
+    } finally {
+      setIsLoadingNewRoundCourses(false)
+    }
+  }
+
+  async function loadNewRoundLayouts(courseId: number) {
+    setIsLoadingNewRoundLayouts(true)
+    setNewRoundError(null)
+
+    try {
+      const layouts = await getPublicCourseLayouts(courseId, false)
+      setNewRoundLayouts(layouts)
+    } catch (error) {
+      setNewRoundError(apiErrorText(error, 'Kunde inte hämta layouter.'))
+    } finally {
+      setIsLoadingNewRoundLayouts(false)
+    }
+  }
+
+  async function handleCreateNewRound(request: {
+    courseId: number
+    layoutId: number
+    startedAt: string
+    playerIds: number[]
+  }) {
+    if (!storedToken) {
+      return
+    }
+
+    const requestBody: CreateRoundRequest = {
+      course_id: request.courseId,
+      started_at: request.startedAt,
+      players: request.playerIds.map((playerId) => ({
+        player_id: playerId,
+        layout_id: request.layoutId,
+      })),
+    }
+
+    setIsSavingNewRound(true)
+    setNewRoundError(null)
+
+    try {
+      const createdRound = await createRound(storedToken, requestBody)
+
+      setSelectedRound(createdRound)
+      setOpenCreatedRoundInEditMode(true)
+      setView('round_detail')
+
+      if (selectedPlayer) {
+        const rounds = await getPlayerRounds(storedToken, selectedPlayer.id)
+        setPlayerRounds(rounds)
+      }
+    } catch (error) {
+      setNewRoundError(apiErrorText(error, 'Kunde inte skapa runda.'))
+    } finally {
+      setIsSavingNewRound(false)
+    }
+  }
+
   return (
     <div className="page">
       <header className="app-header">
@@ -919,7 +1056,24 @@ function App() {
           error={roundsError}
           onBack={() => setView('players')}
           onStatsClick={() => void openPlayerStats(selectedPlayer)}
+          onNewRoundClick={() => void openNewRound()}
           onRoundClick={(roundId) => void openRoundDetail(roundId)}
+        />
+      )}
+
+      {view === 'new_round' && (
+        <NewRoundPage
+          courses={newRoundCourses}
+          layouts={newRoundLayouts}
+          players={selectablePlayersForNewRound()}
+          preselectedPlayerId={selectedPlayer?.id ?? null}
+          isLoadingCourses={isLoadingNewRoundCourses}
+          isLoadingLayouts={isLoadingNewRoundLayouts}
+          isSaving={isSavingNewRound}
+          error={newRoundError}
+          onBack={() => setView(selectedPlayer ? 'player_rounds' : 'home')}
+          onCourseSelected={(courseId) => void loadNewRoundLayouts(courseId)}
+          onSubmit={(request) => void handleCreateNewRound(request)}
         />
       )}
 
@@ -930,11 +1084,13 @@ function App() {
           currentUserRole={user?.role ?? null}
           canEdit={canEditSelectedRound()}
           canDelete={canDeleteSelectedRound()}
+          startInEditMode={openCreatedRoundInEditMode}
           isLoading={isLoadingRoundDetail}
           error={roundDetailError}
           onBack={() => setView('player_rounds')}
           onSaveRound={handleSaveRoundUpdate}
           onDeleteRound={handleDeleteSelectedRound}
+          onEditModeConsumed={() => setOpenCreatedRoundInEditMode(false)}
         />
       )}
 

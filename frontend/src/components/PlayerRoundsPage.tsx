@@ -9,6 +9,7 @@ interface PlayerRoundsPageProps {
   onBack: () => void
   onStatsClick: () => void
   onRoundClick: (roundId: number) => void
+  onNewRoundClick: () => void
 }
 
 function formatDateTime(value: string): string {
@@ -51,6 +52,7 @@ export default function PlayerRoundsPage({
   onBack,
   onStatsClick,
   onRoundClick,
+  onNewRoundClick,
 }: PlayerRoundsPageProps) {
   return (
     <main className="content-page">
@@ -68,6 +70,9 @@ export default function PlayerRoundsPage({
           <button className="primary-button">Rundor</button>
           <button className="secondary-button" onClick={onStatsClick}>
             Statistik
+          </button>
+          <button className="secondary-button" onClick={onNewRoundClick}>
+            Ny runda
           </button>
         </div>
       </div>

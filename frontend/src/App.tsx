@@ -20,6 +20,8 @@ import {
   createRound,
   updateRound,
   deleteRound,
+  approveSessionPlayer,
+  getPendingApprovals,
   changePassword,
   login,
   type CourseApiResponse,
@@ -34,6 +36,7 @@ import {
   type PublicLayoutHoleApiResponse,
   type CreateRoundRequest,
   type RoundUpdateRequest,
+  type PendingApprovalApiResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -47,6 +50,7 @@ import {
   PublicLayoutDetailPage,
   PublicLayoutsPage,
 } from './components/PublicCoursesPages'
+import PendingApprovalsPage from './components/PendingApprovalsPage'
 import SettingsPage from './components/SettingsPage'
 
 
@@ -65,6 +69,7 @@ type AppView =
   | 'player_rounds'
   | 'round_detail'
   | 'new_round'
+  | 'pending_approvals'
   | 'public_courses'
   | 'public_layouts'
   | 'public_layout_detail'
@@ -154,6 +159,9 @@ function App() {
   const [newRoundError, setNewRoundError] = useState<string | null>(null)
   const [openCreatedRoundInEditMode, setOpenCreatedRoundInEditMode] =
     useState(false)
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalApiResponse[]>([])
+  const [isLoadingPendingApprovals, setIsLoadingPendingApprovals] = useState(false)
+  const [pendingApprovalsError, setPendingApprovalsError] = useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
 
@@ -186,6 +194,12 @@ function App() {
 
     void validateStoredToken()
   }, [])
+
+  useEffect(() => {
+    if (authStatus === 'logged_in' && storedToken) {
+      void loadPendingApprovals()
+    }
+  }, [authStatus, storedToken])
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -243,6 +257,46 @@ function App() {
     setNewPassword('')
     setConfirmPassword('')
     setView('settings')
+  }
+
+  async function loadPendingApprovals() {
+    if (!storedToken) {
+      return
+    }
+
+    setIsLoadingPendingApprovals(true)
+    setPendingApprovalsError(null)
+
+    try {
+      const approvals = await getPendingApprovals(storedToken)
+      setPendingApprovals(approvals)
+    } catch (error) {
+      setPendingApprovalsError(
+        apiErrorText(error, 'Kunde inte hämta rundor att godkänna.'),
+      )
+    } finally {
+      setIsLoadingPendingApprovals(false)
+    }
+  }
+
+  async function openPendingApprovals() {
+    setView('pending_approvals')
+    await loadPendingApprovals()
+  }
+
+  async function handleApproveSessionPlayer(sessionPlayerId: number) {
+    if (!storedToken) {
+      return
+    }
+
+    try {
+      await approveSessionPlayer(storedToken, sessionPlayerId)
+      await loadPendingApprovals()
+    } catch (error) {
+      setPendingApprovalsError(
+        apiErrorText(error, 'Kunde inte godkänna rundan.'),
+      )
+    }
   }
 
   async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -827,35 +881,43 @@ function App() {
     }
 
     const result: SelectablePlayer[] = []
+    const seenPlayerIds = new Set<number>()
+
+    function addPlayer(player: {
+      id: number
+      name: string
+      round_count: number
+      permission_level?: string
+    }, subtitle: string) {
+      if (seenPlayerIds.has(player.id)) {
+        return
+      }
+
+      seenPlayerIds.add(player.id)
+
+      result.push({
+        id: player.id,
+        name: player.name,
+        roundCount: player.round_count,
+        subtitle,
+      })
+    }
 
     if (playersData.own_player) {
-      result.push({
-        id: playersData.own_player.id,
-        name: playersData.own_player.name,
-        roundCount: playersData.own_player.round_count,
-        subtitle: 'Egen spelare',
-      })
+      addPlayer(playersData.own_player, 'Egen spelare')
     }
 
     for (const player of playersData.guest_players) {
-      result.push({
-        id: player.id,
-        name: player.name,
-        roundCount: player.round_count,
-        subtitle: 'Gästspelare',
-      })
+      addPlayer(player, 'Gästspelare')
     }
 
     for (const player of playersData.scoreable_players) {
-      result.push({
-        id: player.id,
-        name: player.name,
-        roundCount: player.round_count,
-        subtitle:
-          player.permission_level === 'auto_approve'
-            ? 'Kan scoreas direkt'
-            : 'Kan läggas in för godkännande',
-      })
+      addPlayer(
+        player,
+        player.permission_level === 'auto_approve'
+          ? 'Kan scoreas direkt'
+          : 'Kan läggas in för godkännande',
+      )
     }
 
     return result
@@ -973,6 +1035,16 @@ function App() {
             Webbgränssnittet är anslutet till Discgolf-API:t.
           </p>
         </section>
+
+        {pendingApprovals.length > 0 && (
+          <section className="warning-card">
+            Du har {pendingApprovals.length} resultat att godkänna.
+            {' '}
+            <button className="link-button" onClick={() => void openPendingApprovals()}>
+              Visa
+            </button>
+          </section>
+        )}
 
         <section className="feature-grid">
           <article className="feature-card">
@@ -1142,6 +1214,19 @@ function App() {
             isLoading={isLoadingPublicData}
             error={publicDataError}
             onBack={() => setView('public_layouts')}
+          />
+        )}
+
+        {view === 'pending_approvals' && (
+          <PendingApprovalsPage
+            approvals={pendingApprovals}
+            isLoading={isLoadingPendingApprovals}
+            error={pendingApprovalsError}
+            onBack={() => setView('home')}
+            onOpenRound={(roundId) => void openRoundDetail(roundId)}
+            onApprove={(sessionPlayerId) =>
+              void handleApproveSessionPlayer(sessionPlayerId)
+            }
           />
         )}
 

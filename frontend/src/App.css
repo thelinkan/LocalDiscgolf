@@ -1248,3 +1248,15 @@
   height: 18px;
   width: 18px;
 }
+
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+@media (max-width: 650px) {
+  .approval-actions {
+    flex-direction: column;
+  }
+}

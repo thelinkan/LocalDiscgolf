@@ -722,9 +722,9 @@ def can_edit_round(current_user: dict, round_id: int) -> bool:
             sp.id
         FROM session_player sp
         INNER JOIN user_player_permission upp
-            ON upp.player_id = sp.player_id
+            ON upp.target_player_id = sp.player_id
         WHERE sp.play_session_id = :round_id
-          AND upp.user_id = :user_id
+          AND upp.source_user_id = :user_id
           AND upp.permission_level IN ('auto_approve', 'propose')
           AND sp.approval_state <> 'approved'
         LIMIT 1
@@ -736,7 +736,6 @@ def can_edit_round(current_user: dict, round_id: int) -> bool:
     )
 
     return editable_player is not None
-
 
 def require_round_edit_permission(current_user: dict, round_id: int) -> None:
     if not can_edit_round(current_user, round_id):
@@ -1481,6 +1480,90 @@ def login(request: LoginRequest) -> LoginResponse:
 def get_me(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
+@app.get("/me/pending-approvals")
+def get_my_pending_approvals(
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    if current_user["role"] == "admin":
+        return fetch_all(
+            """
+            SELECT
+                sp.id AS session_player_id,
+                sp.play_session_id AS round_id,
+                sp.player_id,
+                p.name AS player_name,
+                ps.course_id,
+                c.name AS course_name,
+                sp.layout_id,
+                l.name AS layout_name,
+                ps.started_at,
+                ps.ended_at,
+                ps.status,
+                ps.created_by_user_id,
+                creator.username AS created_by_username,
+                sp.added_by_user_id,
+                added_by.username AS added_by_username,
+                sp.approval_required,
+                sp.approval_state
+            FROM session_player sp
+            INNER JOIN play_session ps
+                ON ps.id = sp.play_session_id
+            INNER JOIN player p
+                ON p.id = sp.player_id
+            INNER JOIN course c
+                ON c.id = ps.course_id
+            LEFT JOIN layout l
+                ON l.id = sp.layout_id
+            INNER JOIN user_account creator
+                ON creator.id = ps.created_by_user_id
+            INNER JOIN user_account added_by
+                ON added_by.id = sp.added_by_user_id
+            WHERE sp.approval_required = 1
+              AND sp.approval_state = 'pending'
+            ORDER BY ps.started_at DESC, ps.id DESC
+            """
+        )
+
+    return fetch_all(
+        """
+        SELECT
+            sp.id AS session_player_id,
+            sp.play_session_id AS round_id,
+            sp.player_id,
+            p.name AS player_name,
+            ps.course_id,
+            c.name AS course_name,
+            sp.layout_id,
+            l.name AS layout_name,
+            ps.started_at,
+            ps.ended_at,
+            ps.status,
+            ps.created_by_user_id,
+            creator.username AS created_by_username,
+            sp.added_by_user_id,
+            added_by.username AS added_by_username,
+            sp.approval_required,
+            sp.approval_state
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN player p
+            ON p.id = sp.player_id
+        INNER JOIN course c
+            ON c.id = ps.course_id
+        LEFT JOIN layout l
+            ON l.id = sp.layout_id
+        INNER JOIN user_account creator
+            ON creator.id = ps.created_by_user_id
+        INNER JOIN user_account added_by
+            ON added_by.id = sp.added_by_user_id
+        WHERE sp.approval_required = 1
+          AND sp.approval_state = 'pending'
+          AND p.owner_user_id = :user_id
+        ORDER BY ps.started_at DESC, ps.id DESC
+        """,
+        {"user_id": current_user["id"]},
+    )
 
 @app.post("/change-password")
 def change_password(
@@ -2319,6 +2402,75 @@ def get_player_layout_stats(
         )
 
     return sorted(result, key=lambda row: (row["course_name"], row["layout_name"]))
+
+@app.post("/session-players/{session_player_id}/approve")
+def approve_session_player(
+    session_player_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    session_player = fetch_one(
+        """
+        SELECT
+            sp.id,
+            sp.play_session_id,
+            sp.player_id,
+            sp.approval_required,
+            sp.approval_state,
+            p.owner_user_id,
+            p.name AS player_name
+        FROM session_player sp
+        INNER JOIN player p
+            ON p.id = sp.player_id
+        WHERE sp.id = :session_player_id
+        """,
+        {"session_player_id": session_player_id},
+    )
+
+    if not session_player:
+        raise HTTPException(status_code=404, detail="Session player not found")
+
+    if current_user["role"] != "admin":
+        if session_player["owner_user_id"] is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admin can approve this player",
+            )
+
+        if int(session_player["owner_user_id"]) != int(current_user["id"]):
+            raise HTTPException(
+                status_code=403,
+                detail="Only the player owner or admin can approve this result",
+            )
+
+    if session_player["approval_state"] == "approved":
+        return {
+            "message": "Result already approved",
+            "session_player_id": session_player_id,
+            "round_id": session_player["play_session_id"],
+        }
+
+    execute_write(
+        """
+        UPDATE session_player
+        SET
+            approval_required = 0,
+            approval_state = 'approved',
+            approved_by_user_id = :approved_by_user_id,
+            approved_at = :approved_at
+        WHERE id = :session_player_id
+        """,
+        {
+            "session_player_id": session_player_id,
+            "approved_by_user_id": current_user["id"],
+            "approved_at": datetime.now(),
+        },
+    )
+
+    return {
+        "message": "Result approved",
+        "session_player_id": session_player_id,
+        "round_id": session_player["play_session_id"],
+    }
 
 # =========================
 # Skapa/uppdatera/radera banor

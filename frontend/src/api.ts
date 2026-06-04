@@ -945,3 +945,52 @@ export async function createRound(
 
   return parseResponse<RoundDetailApiResponse>(response)
 }
+
+export interface PendingApprovalApiResponse {
+  session_player_id: number
+  round_id: number
+  player_id: number
+  player_name: string
+  course_id: number
+  course_name: string
+  layout_id: number | null
+  layout_name: string | null
+  started_at: string
+  ended_at: string | null
+  status: string
+  created_by_user_id: number
+  created_by_username: string
+  added_by_user_id: number
+  added_by_username: string
+  approval_required: number
+  approval_state: string
+}
+
+export async function getPendingApprovals(
+  token: string,
+): Promise<PendingApprovalApiResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/me/pending-approvals`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  return parseResponse<PendingApprovalApiResponse[]>(response)
+}
+
+export async function approveSessionPlayer(
+  token: string,
+  sessionPlayerId: number,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/session-players/${sessionPlayerId}/approve`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  await parseResponse<unknown>(response)
+}

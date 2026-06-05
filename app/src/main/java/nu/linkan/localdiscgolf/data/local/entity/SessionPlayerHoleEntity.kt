@@ -93,5 +93,26 @@ data class SessionPlayerHoleEntity(
     val createdAt: Long,
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    @ColumnInfo(name = "server_id")
+    val serverId: Long? = null,
+
+    @ColumnInfo(name = "server_session_player_id")
+    val serverSessionPlayerId: Long? = null,
+
+    @ColumnInfo(name = "server_hole_id")
+    val serverHoleId: Long,
+
+    @ColumnInfo(name = "server_hole_variant_id")
+    val serverHoleVariantId: Long?,
+
+    @ColumnInfo(name = "dirty")
+    val dirty: Boolean = false,
+
+    @ColumnInfo(name = "last_synced_throws_count")
+    val lastSyncedThrowsCount: Int? = null,
+
+    @ColumnInfo(name = "sync_error")
+    val syncError: String? = null
 )

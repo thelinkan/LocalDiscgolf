@@ -6,6 +6,8 @@ data class LayoutHoleWithHole(
     val sequenceNumber: Int,
     val holeId: Long,
     val holeVariantId: Long?,
+    val serverHoleId: Long,
+    val serverHoleVariantId: Long?,
     val holeNumber: Int,
     val holeName: String?,
     val lengthMeters: Int,

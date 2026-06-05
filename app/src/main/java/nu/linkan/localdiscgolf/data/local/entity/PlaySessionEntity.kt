@@ -43,5 +43,26 @@ data class PlaySessionEntity(
     val createdAt: Long,
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    @ColumnInfo(name = "server_id")
+    val serverId: Long? = null,
+
+    @ColumnInfo(name = "sync_status")
+    val syncStatus: String = "local_only",
+
+    @ColumnInfo(name = "last_sync_attempt_at")
+    val lastSyncAttemptAt: Long? = null,
+
+    @ColumnInfo(name = "last_synced_at")
+    val lastSyncedAt: Long? = null,
+
+    @ColumnInfo(name = "sync_error")
+    val syncError: String? = null,
+
+    @ColumnInfo(name = "created_by_user_id")
+    val createdByUserId: Long? = null,
+
+    @ColumnInfo(name = "current_sequence_number")
+    val currentSequenceNumber: Int? = null
 )

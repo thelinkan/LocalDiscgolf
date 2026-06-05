@@ -53,5 +53,14 @@ data class LayoutHoleEntity(
     val holeId: Long,
 
     @ColumnInfo(name = "hole_variant_id")
-    val holeVariantId: Long? = null
+    val holeVariantId: Long? = null,
+
+    @ColumnInfo(name = "server_layout_id")
+    val serverLayoutId: Long,
+
+    @ColumnInfo(name = "server_hole_id")
+    val serverHoleId: Long,
+
+    @ColumnInfo(name = "server_hole_variant_id")
+    val serverHoleVariantId: Long
 )

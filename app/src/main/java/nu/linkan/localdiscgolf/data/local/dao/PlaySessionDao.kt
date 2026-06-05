@@ -431,8 +431,19 @@ interface PlaySessionDao {
                     basketNameSnapshot = layoutHole.basketName,
                     lengthSnapshotMeters = layoutHole.lengthMeters,
                     parSnapshot = layoutHole.parValue,
+                    throwsCount = null,
+                    isCompleted = false,
                     createdAt = createdAt,
-                    updatedAt = createdAt
+                    updatedAt = createdAt,
+
+                    // Nya synkfälten
+                    serverId = null,
+                    serverSessionPlayerId = null,
+                    serverHoleId = layoutHole.serverHoleId,
+                    serverHoleVariantId = layoutHole.serverHoleVariantId,
+                    dirty = false,
+                    lastSyncedThrowsCount = null,
+                    syncError = null
                 )
             }
 

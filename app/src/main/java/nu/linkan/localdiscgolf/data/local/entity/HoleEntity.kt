@@ -49,5 +49,14 @@ data class HoleEntity(
     val createdAt: Long,
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    @ColumnInfo(name = "server_id")
+    val serverId: Long,
+
+    @ColumnInfo(name = "server_course_id")
+    val serverCourseId: Long,
+
+    @ColumnInfo(name = "last_synced_at")
+    val lastSyncedAt: Long? = null
 )

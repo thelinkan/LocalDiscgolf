@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
@@ -97,7 +96,6 @@ import nu.linkan.localdiscgolf.ui.dialogs.AddHoleVariantDialog
 import nu.linkan.localdiscgolf.ui.dialogs.AddLayoutDialog
 import nu.linkan.localdiscgolf.ui.dialogs.EditHoleDialog
 import nu.linkan.localdiscgolf.ui.dialogs.HoleVariantsDialog
-import nu.linkan.localdiscgolf.ui.dialogs.NameInputDialog
 import nu.linkan.localdiscgolf.ui.dialogs.NameInputDialog
 import nu.linkan.localdiscgolf.ui.screens.PlayerDetailScreen
 import nu.linkan.localdiscgolf.ui.screens.PlayerStatsScreen
@@ -814,29 +812,19 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddPlayer = { name ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            playerDao.insert(
-                                PlayerEntity(
-                                    name = name,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
+                    onAddPlayer = {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Lokal spelaredigering är borttagen",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     },
-                    onAddCourse = { name ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            courseDao.insert(
-                                CourseEntity(
-                                    name = name,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
+                    onAddCourse = {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Lokal banredigering är borttagen",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     },
                     observeCourseHoles = { courseId ->
                         lifecycleScope.launch {
@@ -845,42 +833,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHole = { courseId, holeNumber, name, lengthMeters, parValue, notes ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            holeDao.insert(
-                                HoleEntity(
-                                    courseId = courseId,
-                                    holeNumber = holeNumber,
-                                    name = name,
-                                    lengthMeters = lengthMeters,
-                                    parValue = parValue,
-                                    notes = notes,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
-                    onUpdateHole = { holeId, courseId, holeNumber, name, lengthMeters, parValue, notes, isActive, createdAt ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            holeDao.update(
-                                HoleEntity(
-                                    id = holeId,
-                                    courseId = courseId,
-                                    holeNumber = holeNumber,
-                                    name = name,
-                                    lengthMeters = lengthMeters,
-                                    parValue = parValue,
-                                    notes = notes,
-                                    isActive = isActive,
-                                    createdAt = createdAt,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
+                    onAddHole = { _, _, _, _, _, _ -> },
+                    onUpdateHole = { _, _, _, _, _, _, _, _, _ -> },
                     observeSessionHoleCount = { playSessionId ->
                         lifecycleScope.launch {
                             holeCountBySession[playSessionId] = playSessionDao.getHoleCountForSession(playSessionId)
@@ -911,20 +865,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddLayout = { courseId, name, description ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            layoutDao.insert(
-                                LayoutEntity(
-                                    courseId = courseId,
-                                    name = name,
-                                    description = description,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
+                    onAddLayout = { _, _, _ -> },
                     observeLayoutHoles = { layoutId ->
                         lifecycleScope.launch {
                             layoutDao.observeLayoutHoles(layoutId).collectLatest { layoutHoles ->
@@ -939,55 +880,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHoleToLayout = { layoutId, holeId, holeVariantId ->
-                        lifecycleScope.launch {
-                            val nextSequence = layoutDao.getMaxSequenceNumber(layoutId) + 1
-                            layoutDao.insertLayoutHole(
-                                LayoutHoleEntity(
-                                    layoutId = layoutId,
-                                    sequenceNumber = nextSequence,
-                                    holeId = holeId,
-                                    holeVariantId = holeVariantId
-                                )
-                            )
-                        }
-                    },
-                    onRemoveHoleFromLayout = { layoutHoleId, deletedSequenceNumber, layoutId ->
-                        lifecycleScope.launch {
-                            layoutDao.deleteLayoutHoleById(layoutHoleId)
-                            layoutDao.closeGapAfterDelete(layoutId, deletedSequenceNumber)
-                        }
-                    },
-                    onMoveHoleUpInLayout = { layoutHoles, index ->
-                        lifecycleScope.launch {
-                            if (index > 0) {
-                                val current = layoutHoles[index]
-                                val previous = layoutHoles[index - 1]
-
-                                layoutDao.swapLayoutHoleSequences(
-                                    firstLayoutHoleId = current.layoutHoleId,
-                                    firstSequence = current.sequenceNumber,
-                                    secondLayoutHoleId = previous.layoutHoleId,
-                                    secondSequence = previous.sequenceNumber
-                                )
-                            }
-                        }
-                    },
-                    onMoveHoleDownInLayout = { layoutHoles, index ->
-                        lifecycleScope.launch {
-                            if (index < layoutHoles.lastIndex) {
-                                val current = layoutHoles[index]
-                                val next = layoutHoles[index + 1]
-
-                                layoutDao.swapLayoutHoleSequences(
-                                    firstLayoutHoleId = current.layoutHoleId,
-                                    firstSequence = current.sequenceNumber,
-                                    secondLayoutHoleId = next.layoutHoleId,
-                                    secondSequence = next.sequenceNumber
-                                )
-                            }
-                        }
-                    },
+                    onAddHoleToLayout = { _, _, _ -> },
+                    onRemoveHoleFromLayout = { _, _, _ -> },
+                    onMoveHoleUpInLayout = { _, _ -> },
+                    onMoveHoleDownInLayout = { _, _ -> },
                     apiPlayerRounds = apiPlayerRounds,
                     onLoadApiPlayerRounds = { playerId, playerName ->
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
@@ -1015,43 +911,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId, onCreated ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-
-                            val layoutHoles = layoutDao.getLayoutHolesOnce(selectedLayoutId)
-                            val playSessionId = playSessionDao.createPlaySessionWithPlayersAndHoles(
-                                playSession = PlaySessionEntity(
-                                    courseId = courseId,
-                                    startedAt = startedAt,
-                                    createdAt = now,
-                                    updatedAt = now
-                                ),
-                                sessionPlayers = selectedPlayerIds.mapIndexed { index, playerId ->
-                                    val player = players.firstOrNull { it.id == playerId }
-                                    SessionPlayerEntity(
-                                        playSessionId = 0,
-                                        playerId = playerId,
-                                        layoutId = selectedLayoutId,
-                                        displayName = player?.name,
-                                        startOrder = index + 1,
-                                        createdAt = now,
-                                        updatedAt = now
-                                    )
-                                },
-                                layoutHoles = layoutHoles,
-                                courseId = courseId,
-                                createdAt = now
-                            )
-
-                            onCreated(playSessionId)
-                        }
-                    },
-                    onDeleteRound = { playSessionId ->
-                        lifecycleScope.launch {
-                            playSessionDao.deletePlaySession(playSessionId)
-                        }
-                    },
+                    onCreateRound = { _, _, _, _, _ -> },
                     observeRoundHoleRows = { playSessionId, sequenceNumber ->
                         lifecycleScope.launch {
                             playSessionDao.observeRoundHoleRows(playSessionId, sequenceNumber).collectLatest { rows ->
@@ -1085,36 +945,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHoleTee = { holeId, name ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            val nextSortOrder = holeDao.getMaxTeeSortOrder(holeId) + 1
-                            holeDao.insertHoleTee(
-                                HoleTeeEntity(
-                                    holeId = holeId,
-                                    name = name,
-                                    sortOrder = nextSortOrder,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
-                    onAddHoleBasket = { holeId, name ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            val nextSortOrder = holeDao.getMaxBasketSortOrder(holeId) + 1
-                            holeDao.insertHoleBasket(
-                                HoleBasketEntity(
-                                    holeId = holeId,
-                                    name = name,
-                                    sortOrder = nextSortOrder,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
+                    onAddHoleTee = { _, _ -> },
+                    onAddHoleBasket = { _, _ -> },
                     observePlayerSessions = { playerId ->
                         lifecycleScope.launch {
                             playSessionDao.observeSessionsForPlayer(playerId).collectLatest { rows ->
@@ -1152,39 +984,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onAddHoleVariant = { holeId, teeId, basketId, lengthMeters, parValue ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            holeDao.insertHoleVariant(
-                                HoleVariantEntity(
-                                    holeId = holeId,
-                                    teeId = teeId,
-                                    basketId = basketId,
-                                    lengthMeters = lengthMeters,
-                                    parValue = parValue,
-                                    createdAt = now,
-                                    updatedAt = now
-                                )
-                            )
-                        }
-                    },
-                    onFinishRound = { playSessionId ->
-                        lifecycleScope.launch {
-                            val now = System.currentTimeMillis()
-                            playSessionDao.finishPlaySession(
-                                playSessionId = playSessionId,
-                                endedAt = now,
-                                status = "completed",
-                                updatedAt = now
-                            )
-                        }
-                    },
-                    onResumeRound = { playSessionId, onResolved ->
-                        lifecycleScope.launch {
-                            val sequenceNumber = playSessionDao.getResumeSequenceNumber(playSessionId)
-                            onResolved(sequenceNumber)
-                        }
-                    }
+                    onAddHoleVariant = { _, _, _, _, _ -> },
+                    onDeleteRound = { _ -> },
+                    onFinishRound = { _ -> },
+                    onResumeRound = { _, _ -> }
                 )
             }
         }
@@ -1296,14 +1099,10 @@ fun AppNavHost(
     ) {
         composable("start") {
             StartScreen(
-                onPlayersClick = { navController.navigate("players") },
-                onCoursesClick = { navController.navigate("courses") },
-                onServerCoursesClick = { navController.navigate("api_courses") },
-                onServerPlayersClick = { navController.navigate("api_players") },
-                onNewRoundClick = { navController.navigate("new_round") },
-                onNewServerRoundClick = { navController.navigate("api_new_round") },
-                onResumeRoundClick = { navController.navigate("resume_round") },
-                onResumeServerRoundClick = { navController.navigate("api_resume_round") },
+                onPlayersClick = { navController.navigate("api_players") },
+                onCoursesClick = { navController.navigate("api_courses") },
+                onNewRoundClick = { navController.navigate("api_new_round") },
+                onResumeRoundClick = { navController.navigate("api_resume_round") },
                 onSettingsClick = { navController.navigate("settings") },
                 onLoginClick = { navController.navigate("login") },
                 onLogoutClick = onLogout,
@@ -2104,15 +1903,11 @@ fun AppNavHost(
 fun StartScreen(
     onPlayersClick: () -> Unit,
     onCoursesClick: () -> Unit,
-    onServerCoursesClick: () -> Unit,
     onNewRoundClick: () -> Unit,
     onResumeRoundClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
-    onServerPlayersClick: () -> Unit,
-    onNewServerRoundClick: () -> Unit,
-    onResumeServerRoundClick: () -> Unit,
     loggedInUsername: String?
 ) {
     val isLoggedIn = !loggedInUsername.isNullOrBlank()
@@ -2126,106 +1921,71 @@ fun StartScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            if (isLoggedIn) {
+                Text(
+                    text = "Inloggad som $loggedInUsername",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            } else {
+                Text(
+                    text = "Inte inloggad",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            Button(
+                onClick = onPlayersClick,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (isLoggedIn) {
-                    Text(
-                        text = "Inloggad som $loggedInUsername",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                } else {
-                    Text(
-                        text = "Inte inloggad",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
+                Text("Spelare")
+            }
 
-                Button(
-                    onClick = onPlayersClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Spelare")
-                }
+            Button(
+                onClick = onCoursesClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Banor")
+            }
 
-                Button(
-                    onClick = onServerPlayersClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Serverspelare")
-                }
+            Button(
+                onClick = onNewRoundClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Ny runda")
+            }
 
-                Button(
-                    onClick = onCoursesClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Banor")
-                }
-
-                Button(
-                    onClick = onServerCoursesClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Serverbanor")
-                }
-
-                Button(
-                    onClick = onNewRoundClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Ny runda")
-                }
-
-                Button(
-                    onClick = onNewServerRoundClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Ny serverrunda")
-                }
-
-                Button(
-                    onClick = onResumeRoundClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Återuppta runda")
-                }
-
-                Button(
-                    onClick = onResumeServerRoundClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Återuppta serverrunda")
-                }
+            Button(
+                onClick = onResumeRoundClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Återuppta runda")
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            OutlinedButton(
+                onClick = onSettingsClick,
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Text("Inställningar")
+            }
+
+            if (isLoggedIn) {
                 OutlinedButton(
-                    onClick = onSettingsClick,
+                    onClick = onLogoutClick,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Inställningar")
+                    Text("Logga ut")
                 }
-
-                if (isLoggedIn) {
-                    OutlinedButton(
-                        onClick = onLogoutClick,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Logga ut")
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onLoginClick,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Logga in")
-                    }
+            } else {
+                OutlinedButton(
+                    onClick = onLoginClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Logga in")
                 }
             }
         }
@@ -2318,12 +2078,6 @@ fun PlayerHoleDetailScreen(
         }
     }
 }
-
-
-
-
-
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

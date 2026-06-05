@@ -77,5 +77,26 @@ data class SessionPlayerEntity(
     val createdAt: Long,
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    @ColumnInfo(name = "server_id")
+    val serverId: Long? = null,
+
+    @ColumnInfo(name = "server_player_id")
+    val serverPlayerId: Long,
+
+    @ColumnInfo(name = "server_layout_id")
+    val serverLayoutId: Long,
+
+    @ColumnInfo(name = "approval_required")
+    val approvalRequired: Boolean = false,
+
+    @ColumnInfo(name = "approval_state")
+    val approvalState: String = "approved",
+
+    @ColumnInfo(name = "approved_by_user_id")
+    val approvedByUserId: Long? = null,
+
+    @ColumnInfo(name = "approved_at")
+    val approvedAt: Long? = null
 )

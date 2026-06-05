@@ -7,6 +7,7 @@ import nu.linkan.localdiscgolf.data.local.dao.HoleDao
 import nu.linkan.localdiscgolf.data.local.dao.LayoutDao
 import nu.linkan.localdiscgolf.data.local.dao.PlaySessionDao
 import nu.linkan.localdiscgolf.data.local.dao.PlayerDao
+import nu.linkan.localdiscgolf.data.local.dao.SyncDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
@@ -18,6 +19,8 @@ import nu.linkan.localdiscgolf.data.local.entity.PlaySessionEntity
 import nu.linkan.localdiscgolf.data.local.entity.PlayerEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerEntity
 import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
+import nu.linkan.localdiscgolf.data.local.entity.SyncMetadataEntity
+import nu.linkan.localdiscgolf.data.local.entity.SyncQueueEntity
 
 @Database(
     entities = [
@@ -31,9 +34,11 @@ import nu.linkan.localdiscgolf.data.local.entity.SessionPlayerHoleEntity
         LayoutHoleEntity::class,
         PlaySessionEntity::class,
         SessionPlayerEntity::class,
-        SessionPlayerHoleEntity::class
+        SessionPlayerHoleEntity::class,
+        SyncQueueEntity::class,
+        SyncMetadataEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,4 +47,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun holeDao(): HoleDao
     abstract fun layoutDao(): LayoutDao
     abstract fun playSessionDao(): PlaySessionDao
+
+    abstract fun syncDao(): SyncDao
 }

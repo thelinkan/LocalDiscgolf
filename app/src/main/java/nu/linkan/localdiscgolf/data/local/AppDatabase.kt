@@ -8,6 +8,7 @@ import nu.linkan.localdiscgolf.data.local.dao.LayoutDao
 import nu.linkan.localdiscgolf.data.local.dao.PlaySessionDao
 import nu.linkan.localdiscgolf.data.local.dao.PlayerDao
 import nu.linkan.localdiscgolf.data.local.dao.SyncDao
+import nu.linkan.localdiscgolf.data.local.dao.ReferenceSyncDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
@@ -38,7 +39,7 @@ import nu.linkan.localdiscgolf.data.local.entity.SyncQueueEntity
         SyncQueueEntity::class,
         SyncMetadataEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +48,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun holeDao(): HoleDao
     abstract fun layoutDao(): LayoutDao
     abstract fun playSessionDao(): PlaySessionDao
-
+    abstract fun referenceSyncDao(): ReferenceSyncDao
     abstract fun syncDao(): SyncDao
 }

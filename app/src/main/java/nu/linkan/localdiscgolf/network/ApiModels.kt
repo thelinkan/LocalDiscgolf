@@ -26,14 +26,14 @@ data class CourseApiResponse(
     val id: Long,
     val name: String,
     val is_active: Int,
-    val hole_count: Int,
-    val layout_count: Int
+    val hole_count: Int? = null,
+    val layout_count: Int? = null
 )
 
 data class LayoutApiResponse(
     val id: Long,
     val course_id: Long,
-    val course_name: String,
+    val course_name: String?,
     val name: String,
     val description: String?,
     val is_active: Int,
@@ -52,6 +52,45 @@ data class LayoutHoleApiResponse(
     val basket_name: String?,
     val length_meters: Int,
     val par_value: Int
+)
+
+data class HoleApiResponse(
+    val id: Long,
+    val course_id: Long,
+    val hole_number: Int,
+    val name: String?,
+    val length_meters: Int,
+    val par_value: Int,
+    val notes: String?,
+    val is_active: Int
+)
+
+data class HoleTeeApiResponse(
+    val id: Long,
+    val hole_id: Long,
+    val name: String,
+    val sort_order: Int,
+    val is_active: Int
+)
+
+data class HoleBasketApiResponse(
+    val id: Long,
+    val hole_id: Long,
+    val name: String,
+    val sort_order: Int,
+    val is_active: Int
+)
+
+data class HoleVariantApiResponse(
+    val id: Long,
+    val hole_id: Long,
+    val tee_id: Long,
+    val tee_name: String?,
+    val basket_id: Long,
+    val basket_name: String?,
+    val length_meters: Int,
+    val par_value: Int,
+    val is_active: Int
 )
 
 data class UserApiResponse(

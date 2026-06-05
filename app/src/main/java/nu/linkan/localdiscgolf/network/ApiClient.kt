@@ -72,20 +72,28 @@ object ApiClient {
         }
     }
 
-    fun getCourses(baseUrl: String, token: String): Result<List<CourseApiResponse>> {
+    fun getCourses(
+        baseUrl: String,
+        token: String,
+        includeInactive: Boolean = false
+    ): Result<List<CourseApiResponse>> {
         return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
             val request = Request.Builder()
-                .url("$baseUrl/courses")
+                .url("$baseUrl/courses$query")
                 .header("Authorization", "Bearer $token")
                 .get()
                 .build()
 
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
-                println("GET /courses responseBody: $responseBody")
+                println("GET /courses$query responseBody: $responseBody")
 
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Get /courses failed: ${response.code} $responseBody"))
+                    return Result.failure(
+                        Exception("Get /courses failed: ${response.code} $responseBody")
+                    )
                 }
 
                 val listType = com.google.gson.reflect.TypeToken
@@ -101,20 +109,29 @@ object ApiClient {
         }
     }
 
-    fun getCourseLayouts(baseUrl: String, token: String, courseId: Long): Result<List<LayoutApiResponse>> {
+    fun getCourseLayouts(
+        baseUrl: String,
+        token: String,
+        courseId: Long,
+        includeInactive: Boolean = false
+    ): Result<List<LayoutApiResponse>> {
         return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
             val request = Request.Builder()
-                .url("$baseUrl/courses/$courseId/layouts")
+                .url("$baseUrl/courses/$courseId/layouts$query")
                 .header("Authorization", "Bearer $token")
                 .get()
                 .build()
 
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
-                println("GET /courses/$courseId/layouts responseBody: $responseBody")
+                println("GET /courses/$courseId/layouts$query responseBody: $responseBody")
 
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Get /courses/$courseId/layouts failed: ${response.code} $responseBody"))
+                    return Result.failure(
+                        Exception("Get /courses/$courseId/layouts failed: ${response.code} $responseBody")
+                    )
                 }
 
                 val listType = com.google.gson.reflect.TypeToken
@@ -122,6 +139,158 @@ object ApiClient {
                     .type
 
                 val parsed: List<LayoutApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getCourseHoles(
+        baseUrl: String,
+        token: String,
+        courseId: Long,
+        includeInactive: Boolean = false
+    ): Result<List<HoleApiResponse>> {
+        return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
+            val request = Request.Builder()
+                .url("$baseUrl/courses/$courseId/holes$query")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /courses/$courseId/holes$query responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /courses/$courseId/holes failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, HoleApiResponse::class.java)
+                    .type
+
+                val parsed: List<HoleApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getHoleTees(
+        baseUrl: String,
+        token: String,
+        holeId: Long,
+        includeInactive: Boolean = false
+    ): Result<List<HoleTeeApiResponse>> {
+        return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
+            val request = Request.Builder()
+                .url("$baseUrl/holes/$holeId/tees$query")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /holes/$holeId/tees$query responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /holes/$holeId/tees failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, HoleTeeApiResponse::class.java)
+                    .type
+
+                val parsed: List<HoleTeeApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getHoleBaskets(
+        baseUrl: String,
+        token: String,
+        holeId: Long,
+        includeInactive: Boolean = false
+    ): Result<List<HoleBasketApiResponse>> {
+        return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
+            val request = Request.Builder()
+                .url("$baseUrl/holes/$holeId/baskets$query")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /holes/$holeId/baskets$query responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /holes/$holeId/baskets failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, HoleBasketApiResponse::class.java)
+                    .type
+
+                val parsed: List<HoleBasketApiResponse> = gson.fromJson(responseBody, listType)
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    fun getHoleVariants(
+        baseUrl: String,
+        token: String,
+        holeId: Long,
+        includeInactive: Boolean = false
+    ): Result<List<HoleVariantApiResponse>> {
+        return try {
+            val query = if (includeInactive) "?include_inactive=true" else ""
+
+            val request = Request.Builder()
+                .url("$baseUrl/holes/$holeId/variants$query")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("GET /holes/$holeId/variants$query responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Get /holes/$holeId/variants failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val listType = com.google.gson.reflect.TypeToken
+                    .getParameterized(List::class.java, HoleVariantApiResponse::class.java)
+                    .type
+
+                val parsed: List<HoleVariantApiResponse> = gson.fromJson(responseBody, listType)
                 Result.success(parsed)
             }
         } catch (e: Exception) {

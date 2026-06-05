@@ -13,30 +13,22 @@ import androidx.room.PrimaryKey
             entity = LayoutEntity::class,
             parentColumns = ["id"],
             childColumns = ["layout_id"],
-            onDelete = ForeignKey.CASCADE,
-            onUpdate = ForeignKey.NO_ACTION
+            onDelete = ForeignKey.CASCADE
         ),
         ForeignKey(
             entity = HoleEntity::class,
             parentColumns = ["id"],
             childColumns = ["hole_id"],
-            onDelete = ForeignKey.RESTRICT,
-            onUpdate = ForeignKey.NO_ACTION
-        ),
-        ForeignKey(
-            entity = HoleVariantEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["hole_variant_id"],
-            onDelete = ForeignKey.RESTRICT,
-            onUpdate = ForeignKey.NO_ACTION
+            onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [
-        Index(value = ["layout_id", "sequence_number"], unique = true),
-        Index(value = ["layout_id", "hole_variant_id"], unique = true),
-        Index(value = ["layout_id"]),
-        Index(value = ["hole_id"]),
-        Index(value = ["hole_variant_id"])
+        Index("layout_id"),
+        Index("hole_id"),
+        Index("hole_variant_id"),
+        Index("server_layout_id"),
+        Index("server_hole_id"),
+        Index("server_hole_variant_id")
     ]
 )
 data class LayoutHoleEntity(
@@ -46,21 +38,27 @@ data class LayoutHoleEntity(
     @ColumnInfo(name = "layout_id")
     val layoutId: Long,
 
-    @ColumnInfo(name = "sequence_number")
-    val sequenceNumber: Int,
-
     @ColumnInfo(name = "hole_id")
     val holeId: Long,
 
     @ColumnInfo(name = "hole_variant_id")
-    val holeVariantId: Long? = null,
+    val holeVariantId: Long?,
+
+    @ColumnInfo(name = "sequence_number")
+    val sequenceNumber: Int,
 
     @ColumnInfo(name = "server_layout_id")
-    val serverLayoutId: Long,
+    val serverLayoutId: Long? = null,
 
     @ColumnInfo(name = "server_hole_id")
-    val serverHoleId: Long,
+    val serverHoleId: Long? = null,
 
     @ColumnInfo(name = "server_hole_variant_id")
-    val serverHoleVariantId: Long
+    val serverHoleVariantId: Long? = null,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long = System.currentTimeMillis()
 )

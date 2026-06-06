@@ -88,15 +88,20 @@ interface PlaySessionDao {
     suspend fun getHoleCountForSession(playSessionId: Long): Int
 
     @Query("""
-        UPDATE session_player_hole
-        SET throws_count = :throwsCount,
-            is_completed = 1,
-            updated_at = :updatedAt
-        WHERE id = :sessionPlayerHoleId
-    """)
+    UPDATE session_player_hole
+    SET throws_count = :throwsCount,
+        is_completed = CASE
+            WHEN :throwsCount IS NULL THEN 0
+            ELSE 1
+        END,
+        dirty = 1,
+        sync_error = NULL,
+        updated_at = :updatedAt
+    WHERE id = :sessionPlayerHoleId
+""")
     suspend fun updateThrowsForSessionPlayerHole(
         sessionPlayerHoleId: Long,
-        throwsCount: Int,
+        throwsCount: Int?,
         updatedAt: Long
     )
 
@@ -104,6 +109,8 @@ interface PlaySessionDao {
     UPDATE play_session
     SET ended_at = :endedAt,
         status = :status,
+        sync_status = 'pending_complete',
+        sync_error = NULL,
         updated_at = :updatedAt
     WHERE id = :playSessionId
 """)
@@ -111,6 +118,21 @@ interface PlaySessionDao {
         playSessionId: Long,
         endedAt: Long,
         status: String,
+        updatedAt: Long
+    )
+
+    @Query("""
+    UPDATE play_session
+    SET sync_status = CASE
+            WHEN server_id IS NULL THEN 'local_only'
+            ELSE 'pending_update'
+        END,
+        sync_error = NULL,
+        updated_at = :updatedAt
+    WHERE id = :playSessionId
+""")
+    suspend fun markPlaySessionPendingUpdate(
+        playSessionId: Long,
         updatedAt: Long
     )
 
@@ -452,4 +474,25 @@ interface PlaySessionDao {
 
         return playSessionId
     }
+
+    @Transaction
+    suspend fun updateThrowsAndMarkSessionDirty(
+        playSessionId: Long,
+        sessionPlayerHoleId: Long,
+        throwsCount: Int?,
+        updatedAt: Long
+    ) {
+        updateThrowsForSessionPlayerHole(
+            sessionPlayerHoleId = sessionPlayerHoleId,
+            throwsCount = throwsCount,
+            updatedAt = updatedAt
+        )
+
+        markPlaySessionPendingUpdate(
+            playSessionId = playSessionId,
+            updatedAt = updatedAt
+        )
+    }
 }
+
+

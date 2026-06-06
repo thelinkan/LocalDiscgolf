@@ -92,6 +92,7 @@ import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
 import nu.linkan.localdiscgolf.data.local.model.CourseListRow
 import nu.linkan.localdiscgolf.data.sync.ReferenceSyncRepository
+import nu.linkan.localdiscgolf.data.local.repository.LocalRoundCreationRepository
 
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleDialog
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleToLayoutDialog
@@ -167,6 +168,10 @@ class MainActivity : ComponentActivity() {
 
         val referenceSyncRepository = ReferenceSyncRepository(
             referenceSyncDao = db.referenceSyncDao()
+        )
+
+        val localRoundCreationRepository = LocalRoundCreationRepository(
+            localRoundCreationDao = db.localRoundCreationDao()
         )
 
         setContent {
@@ -328,6 +333,7 @@ class MainActivity : ComponentActivity() {
                     apiPort = apiPort,
                     authToken = authToken,
                     loggedInUsername = if (isCheckingSavedLogin) "" else loggedInUsername,
+                    localRoundCreationRepository = localRoundCreationRepository,
                     onSyncReferenceData = {
                         if (
                             apiHost.isBlank() ||
@@ -973,7 +979,37 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onCreateRound = { _, _, _, _, _ -> },
+                    onCreateRound = { courseId, layoutId, playerIds, startedAt, onCreated ->
+                        lifecycleScope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                localRoundCreationRepository.createLocalRoundFromCache(
+                                    courseId = courseId,
+                                    layoutId = layoutId,
+                                    playerIds = playerIds,
+                                    startedAt = startedAt
+                                )
+                            }
+
+                            result.fold(
+                                onSuccess = { playSessionId ->
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Runda skapad lokalt",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+
+                                    onCreated(playSessionId)
+                                },
+                                onFailure = { error ->
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Kunde inte skapa lokal runda: ${error.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            )
+                        }
+                    },
                     observeRoundHoleRows = { playSessionId, sequenceNumber ->
                         lifecycleScope.launch {
                             playSessionDao.observeRoundHoleRows(playSessionId, sequenceNumber).collectLatest { rows ->
@@ -1016,12 +1052,15 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onUpdateThrowsForHole = { sessionPlayerHoleId, throwsCount ->
+                    onUpdateThrowsForHole = { playSessionId, sessionPlayerHoleId, throwsCount ->
                         lifecycleScope.launch {
-                            playSessionDao.updateThrowsForSessionPlayerHole(
+                            val updatedAt = System.currentTimeMillis()
+
+                            playSessionDao.updateThrowsAndMarkSessionDirty(
+                                playSessionId = playSessionId,
                                 sessionPlayerHoleId = sessionPlayerHoleId,
                                 throwsCount = throwsCount,
-                                updatedAt = System.currentTimeMillis()
+                                updatedAt = updatedAt
                             )
                         }
                     },
@@ -1080,8 +1119,9 @@ fun AppNavHost(
     onMoveHoleUpInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onCreateRound: (Long, Long, List<Long>, Long, (Long) -> Unit) -> Unit,
+    localRoundCreationRepository: LocalRoundCreationRepository,
     observeRoundHoleRows: (Long, Int) -> Unit,
-    onUpdateThrowsForHole: (Long, Int) -> Unit,
+    onUpdateThrowsForHole: (Long, Long, Int?) -> Unit,
     onFinishRound: (Long) -> Unit,
     observeSessionHoleCount: (Long) -> Unit,
     observeRoundSummaryRows: (Long) -> Unit,
@@ -1415,22 +1455,21 @@ fun AppNavHost(
         }
 
         composable("api_new_round") {
-            LaunchedEffect(Unit) {
-                onLoadApiCourses()
-                onLoadApiUserPlayers()
-            }
-
-            ApiNewRoundScreen(
-                courses = apiCourses,
-                layouts = apiNewRoundLayouts,
-                userPlayers = apiUserPlayers,
+            NewRoundScreen(
+                players = players,
+                courses = courses,
+                layoutsByCourse = layoutsByCourse,
                 onBack = { navController.popBackStack() },
-                onCourseSelected = { courseId ->
-                    onLoadApiNewRoundLayouts(courseId)
-                },
-                onCreateRound = { courseId, layoutId, playerIds ->
-                    onCreateApiRound(courseId, layoutId, playerIds) { roundId ->
-                        navController.navigate("api_round_hole/$roundId/1")
+                observeCourseLayouts = observeCourseLayouts,
+                onCreateRound = { courseId, layoutId, playerIds, startedAt, onCreated ->
+                    onCreateRound(courseId, layoutId, playerIds, startedAt) { playSessionId ->
+                        onCreated(playSessionId)
+
+                        navController.navigate("round/$playSessionId/1") {
+                            popUpTo("api_new_round") {
+                                inclusive = true
+                            }
+                        }
                     }
                 }
             )
@@ -1745,14 +1784,20 @@ fun AppNavHost(
                 layoutsByCourse = layoutsByCourse,
                 onBack = { navController.popBackStack() },
                 observeCourseLayouts = observeCourseLayouts,
-                onCreateRound = { courseId, startedAt, selectedPlayerIds, selectedLayoutId, onCreated ->
+                onCreateRound = { courseId, layoutId, selectedPlayerIds, startedAt, onCreated ->
                     onCreateRound(
                         courseId,
-                        startedAt,
+                        layoutId,
                         selectedPlayerIds,
-                        selectedLayoutId
+                        startedAt
                     ) { playSessionId ->
-                        navController.navigate("round/$playSessionId/1")
+                        onCreated(playSessionId)
+
+                        navController.navigate("round/$playSessionId/1") {
+                            popUpTo("api_new_round") {
+                                inclusive = true
+                            }
+                        }
                     }
                 }
             )
@@ -1811,7 +1856,11 @@ fun AppNavHost(
                 },
                 onSaveHoleResults = { values ->
                     values.forEach { (sessionPlayerHoleId, throwsCount) ->
-                        onUpdateThrowsForHole(sessionPlayerHoleId, throwsCount)
+                        onUpdateThrowsForHole(
+                            playSessionId,
+                            sessionPlayerHoleId,
+                            throwsCount
+                        )
                     }
                 },
                 onFinishRound = {
@@ -2213,9 +2262,9 @@ fun NewRoundScreen(
 
                         onCreateRound(
                             courseId,
-                            startedAt,
+                            layoutId,
                             selectedPlayerIds.toList(),
-                            layoutId
+                            startedAt
                         ) { playSessionId ->
                             // lämnas tom här om navigation sker i AppNavHost
                         }
@@ -2263,6 +2312,9 @@ fun NewRoundScreen(
             }
 
             items(availableLayouts) { layout ->
+                println(
+                    "Layout in NewRoundScreen: id=${layout.id}, serverId=${layout.serverId}, name=${layout.name}"
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

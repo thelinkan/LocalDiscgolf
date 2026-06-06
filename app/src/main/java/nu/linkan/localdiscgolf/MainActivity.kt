@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +63,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import nu.linkan.localdiscgolf.data.local.DatabaseProvider
@@ -89,6 +91,7 @@ import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
 import nu.linkan.localdiscgolf.data.local.model.CourseListRow
+import nu.linkan.localdiscgolf.data.sync.ReferenceSyncRepository
 
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleDialog
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleToLayoutDialog
@@ -141,7 +144,6 @@ import nu.linkan.localdiscgolf.network.PlayerHoleStatsApiResponse
 
 import android.content.Context
 import android.widget.Toast
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import nu.linkan.localdiscgolf.network.ApiClient
 
@@ -162,6 +164,10 @@ class MainActivity : ComponentActivity() {
         val holeDao = db.holeDao()
         val layoutDao = db.layoutDao()
         val playSessionDao = db.playSessionDao()
+
+        val referenceSyncRepository = ReferenceSyncRepository(
+            referenceSyncDao = db.referenceSyncDao()
+        )
 
         setContent {
             LocalDiscgolfTheme {
@@ -322,6 +328,62 @@ class MainActivity : ComponentActivity() {
                     apiPort = apiPort,
                     authToken = authToken,
                     loggedInUsername = if (isCheckingSavedLogin) "" else loggedInUsername,
+                    onSyncReferenceData = {
+                        if (
+                            apiHost.isBlank() ||
+                            apiPort.isBlank() ||
+                            authToken.isBlank() ||
+                            loggedInUsername.isBlank()
+                        ) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                val result = withContext(Dispatchers.IO) {
+                                    referenceSyncRepository.syncReferenceData(
+                                        baseUrl = baseUrl,
+                                        token = authToken,
+                                        username = loggedInUsername
+                                    )
+                                }
+
+                                result.fold(
+                                    onSuccess = {
+                                        val players = withContext(Dispatchers.IO) {
+                                            db.cachedRoundSetupDao().getPlayersForRound()
+                                        }
+
+                                        val courses = withContext(Dispatchers.IO) {
+                                            db.cachedRoundSetupDao().getCoursesForRound()
+                                        }
+
+                                        println("Cached players for round: ${players.size}")
+                                        println("Cached courses for round: ${courses.size}")
+
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Synk klar. Spelare: ${players.size}, banor: ${courses.size}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Synk misslyckades: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
                     onApiHostChange = { apiHost = it },
                     onApiPortChange = { apiPort = it },
                     onAuthTokenChange = { authToken = it },
@@ -1057,6 +1119,7 @@ fun AppNavHost(
     onApiHostChange: (String) -> Unit,
     onApiPortChange: (String) -> Unit,
     onAuthTokenChange: (String) -> Unit,
+    onSyncReferenceData: () -> Unit,
     onLoggedInUsernameChange: (String) -> Unit,
     prefs: android.content.SharedPreferences,
     activity: ComponentActivity,
@@ -1103,6 +1166,7 @@ fun AppNavHost(
                 onCoursesClick = { navController.navigate("api_courses") },
                 onNewRoundClick = { navController.navigate("api_new_round") },
                 onResumeRoundClick = { navController.navigate("api_resume_round") },
+                onSyncClick = onSyncReferenceData,
                 onSettingsClick = { navController.navigate("settings") },
                 onLoginClick = { navController.navigate("login") },
                 onLogoutClick = onLogout,
@@ -1905,6 +1969,7 @@ fun StartScreen(
     onCoursesClick: () -> Unit,
     onNewRoundClick: () -> Unit,
     onResumeRoundClick: () -> Unit,
+    onSyncClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
@@ -1967,6 +2032,13 @@ fun StartScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             OutlinedButton(
+                onClick = onSyncClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Synka data")
+            }
+
+            OutlinedButton(
                 onClick = onSettingsClick,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1991,6 +2063,7 @@ fun StartScreen(
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

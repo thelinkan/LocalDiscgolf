@@ -12,6 +12,7 @@ import nu.linkan.localdiscgolf.data.local.dao.ReferenceSyncDao
 import nu.linkan.localdiscgolf.data.local.dao.CachedRoundSetupDao
 import nu.linkan.localdiscgolf.data.local.dao.LocalRoundCreationDao
 import nu.linkan.localdiscgolf.data.local.dao.RoundSyncDao
+import nu.linkan.localdiscgolf.data.local.dao.LocalResumeRoundDao
 import nu.linkan.localdiscgolf.data.local.entity.CourseEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleEntity
@@ -56,4 +57,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cachedRoundSetupDao(): CachedRoundSetupDao
     abstract fun localRoundCreationDao(): LocalRoundCreationDao
     abstract fun roundSyncDao(): RoundSyncDao
+    abstract fun localResumeRoundDao(): LocalResumeRoundDao
 }

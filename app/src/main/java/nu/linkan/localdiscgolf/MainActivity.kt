@@ -84,6 +84,7 @@ import nu.linkan.localdiscgolf.data.local.model.PlayerHoleStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerLayoutStatsRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerHoleDetailRoundRow
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
+import nu.linkan.localdiscgolf.data.local.model.LocalResumeRoundListItem
 import nu.linkan.localdiscgolf.data.local.entity.HoleBasketEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleTeeEntity
 import nu.linkan.localdiscgolf.data.local.entity.HoleVariantEntity
@@ -92,6 +93,7 @@ import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
 import nu.linkan.localdiscgolf.data.local.model.CourseListRow
 import nu.linkan.localdiscgolf.data.local.repository.LocalRoundCreationRepository
+import nu.linkan.localdiscgolf.data.local.repository.LocalResumeRoundRepository
 import nu.linkan.localdiscgolf.data.sync.ReferenceSyncRepository
 import nu.linkan.localdiscgolf.data.sync.RoundSyncRepository
 
@@ -108,6 +110,7 @@ import nu.linkan.localdiscgolf.ui.screens.PlayersScreen
 import nu.linkan.localdiscgolf.ui.screens.CoursesScreen
 import nu.linkan.localdiscgolf.ui.screens.CourseDetailScreen
 import nu.linkan.localdiscgolf.ui.screens.LayoutDetailScreen
+import nu.linkan.localdiscgolf.ui.screens.LocalResumeRoundScreen
 import nu.linkan.localdiscgolf.ui.components.HoleRow
 import nu.linkan.localdiscgolf.ui.screens.RoundHoleScreen
 import nu.linkan.localdiscgolf.ui.screens.formatRelativeScore
@@ -177,6 +180,10 @@ class MainActivity : ComponentActivity() {
 
         val roundSyncRepository = RoundSyncRepository(
             roundSyncDao = db.roundSyncDao()
+        )
+
+        val localResumeRoundRepository = LocalResumeRoundRepository(
+            localResumeRoundDao = db.localResumeRoundDao()
         )
 
         setContent {
@@ -339,6 +346,7 @@ class MainActivity : ComponentActivity() {
                     authToken = authToken,
                     loggedInUsername = if (isCheckingSavedLogin) "" else loggedInUsername,
                     localRoundCreationRepository = localRoundCreationRepository,
+                    localResumeRoundRepository = localResumeRoundRepository,
                     onSyncReferenceData = {
                         if (
                             apiHost.isBlank() ||
@@ -1172,6 +1180,7 @@ fun AppNavHost(
     onMoveHoleDownInLayout: (List<LayoutHoleWithHole>, Int) -> Unit,
     onCreateRound: (Long, Long, List<Long>, Long, (Long) -> Unit) -> Unit,
     localRoundCreationRepository: LocalRoundCreationRepository,
+    localResumeRoundRepository: LocalResumeRoundRepository,
     observeRoundHoleRows: (Long, Int) -> Unit,
     onUpdateThrowsForHole: (Long, Long, Int?) -> Unit,
     onFinishRound: (Long) -> Unit,
@@ -1249,6 +1258,19 @@ fun AppNavHost(
     onLoadApiPlayerStats: (Long, Long?) -> Unit,
 ){
     val coroutineScope = rememberCoroutineScope()
+
+    var localResumeRounds by remember {
+        mutableStateOf<List<LocalResumeRoundListItem>>(emptyList())
+    }
+
+    var isLoadingLocalResumeRounds by remember {
+        mutableStateOf(false)
+    }
+
+    var localResumeRoundsError by remember {
+        mutableStateOf<String?>(null)
+    }
+
     NavHost(
         navController = navController,
         startDestination = "start"
@@ -1531,16 +1553,41 @@ fun AppNavHost(
 
         composable("api_resume_round") {
             LaunchedEffect(Unit) {
-                onLoadApiInProgressRounds()
+                isLoadingLocalResumeRounds = true
+                localResumeRoundsError = null
+
+                val baseUrl = if (apiHost.isBlank() || apiPort.isBlank()) {
+                    null
+                } else {
+                    ApiClient.buildBaseUrl(apiHost, apiPort)
+                }
+
+                val result = withContext(Dispatchers.IO) {
+                    localResumeRoundRepository.getResumeRounds(
+                        baseUrl = baseUrl,
+                        token = authToken.ifBlank { null }
+                    )
+                }
+
+                result.fold(
+                    onSuccess = { rounds ->
+                        localResumeRounds = rounds
+                    },
+                    onFailure = { error ->
+                        localResumeRoundsError = error.message
+                    }
+                )
+
+                isLoadingLocalResumeRounds = false
             }
 
-            ApiResumeRoundScreen(
-                rounds = apiInProgressRounds,
+            LocalResumeRoundScreen(
+                rounds = localResumeRounds,
+                isLoading = isLoadingLocalResumeRounds,
+                error = localResumeRoundsError,
                 onBack = { navController.popBackStack() },
-                onResume = { roundId ->
-                    onResumeApiRound(roundId) { sequenceNumber ->
-                        navController.navigate("api_round_hole/$roundId/$sequenceNumber")
-                    }
+                onRoundClick = { playSessionId, sequenceNumber ->
+                    navController.navigate("round/$playSessionId/$sequenceNumber")
                 }
             )
         }

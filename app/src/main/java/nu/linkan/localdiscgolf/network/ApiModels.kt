@@ -333,3 +333,15 @@ data class PlayerHoleStatsApiResponse(
     val double_bogey_count: Int,
     val triple_bogey_or_worse_count: Int
 )
+
+data class RoundHoleScoreUpdateApiRequest(
+    val session_player_hole_id: Long,
+    val throws_count: Int?
+)
+
+data class UpdateRoundApiRequest(
+    val started_at: String? = null,
+    val ended_at: String? = null,
+    val status: String? = null,
+    val scores: List<RoundHoleScoreUpdateApiRequest>? = null
+)

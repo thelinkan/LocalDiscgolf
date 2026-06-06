@@ -730,4 +730,42 @@ object ApiClient {
             Result.failure(e)
         }
     }
+
+    fun updateRound(
+        baseUrl: String,
+        token: String,
+        roundId: Long,
+        requestBody: UpdateRoundApiRequest
+    ): Result<RoundDetailApiResponse> {
+        return try {
+            val bodyJson = gson.toJson(requestBody)
+
+            val request = Request.Builder()
+                .url("$baseUrl/rounds/$roundId")
+                .header("Authorization", "Bearer $token")
+                .patch(bodyJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                println("PATCH /rounds/$roundId responseBody: $responseBody")
+
+                if (!response.isSuccessful) {
+                    return Result.failure(
+                        Exception("Update round failed: ${response.code} $responseBody")
+                    )
+                }
+
+                val parsed = gson.fromJson(
+                    responseBody,
+                    RoundDetailApiResponse::class.java
+                )
+
+                Result.success(parsed)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

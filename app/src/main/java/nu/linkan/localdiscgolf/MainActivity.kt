@@ -91,8 +91,9 @@ import nu.linkan.localdiscgolf.data.local.model.HoleVariantWithNames
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import nu.linkan.localdiscgolf.data.local.model.PlayerListRow
 import nu.linkan.localdiscgolf.data.local.model.CourseListRow
-import nu.linkan.localdiscgolf.data.sync.ReferenceSyncRepository
 import nu.linkan.localdiscgolf.data.local.repository.LocalRoundCreationRepository
+import nu.linkan.localdiscgolf.data.sync.ReferenceSyncRepository
+import nu.linkan.localdiscgolf.data.sync.RoundSyncRepository
 
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleDialog
 import nu.linkan.localdiscgolf.ui.dialogs.AddHoleToLayoutDialog
@@ -172,6 +173,10 @@ class MainActivity : ComponentActivity() {
 
         val localRoundCreationRepository = LocalRoundCreationRepository(
             localRoundCreationDao = db.localRoundCreationDao()
+        )
+
+        val roundSyncRepository = RoundSyncRepository(
+            roundSyncDao = db.roundSyncDao()
         )
 
         setContent {
@@ -848,7 +853,43 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    onSyncRounds = {
+                        if (apiHost.isBlank() || apiPort.isBlank() || authToken.isBlank()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            lifecycleScope.launch {
+                                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
 
+                                val result = withContext(Dispatchers.IO) {
+                                    roundSyncRepository.syncPendingRounds(
+                                        baseUrl = baseUrl,
+                                        token = authToken
+                                    )
+                                }
+
+                                result.fold(
+                                    onSuccess = { syncedCount ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Rundsynk klar. Synkade rundor: $syncedCount",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Rundsynk misslyckades: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
                     onResumeApiRound = { roundId, onResolved ->
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
                             Toast.makeText(
@@ -1056,12 +1097,23 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             val updatedAt = System.currentTimeMillis()
 
-                            playSessionDao.updateThrowsAndMarkSessionDirty(
-                                playSessionId = playSessionId,
-                                sessionPlayerHoleId = sessionPlayerHoleId,
-                                throwsCount = throwsCount,
-                                updatedAt = updatedAt
-                            )
+                            withContext(Dispatchers.IO) {
+                                playSessionDao.updateThrowsAndMarkSessionDirty(
+                                    playSessionId = playSessionId,
+                                    sessionPlayerHoleId = sessionPlayerHoleId,
+                                    throwsCount = throwsCount,
+                                    updatedAt = updatedAt
+                                )
+
+                                val pending = db.roundSyncDao().getPendingRoundsForSync()
+
+                                println("Pending rounds for sync: ${pending.size}")
+                                pending.forEach {
+                                    println(
+                                        "Pending round: id=${it.id}, serverId=${it.serverId}, status=${it.status}, syncStatus=${it.syncStatus}"
+                                    )
+                                }
+                            }
                         }
                     },
                     observePlayerLayoutStats = { playerId ->
@@ -1160,6 +1212,7 @@ fun AppNavHost(
     onApiPortChange: (String) -> Unit,
     onAuthTokenChange: (String) -> Unit,
     onSyncReferenceData: () -> Unit,
+    onSyncRounds: () -> Unit,
     onLoggedInUsernameChange: (String) -> Unit,
     prefs: android.content.SharedPreferences,
     activity: ComponentActivity,
@@ -1207,6 +1260,7 @@ fun AppNavHost(
                 onNewRoundClick = { navController.navigate("api_new_round") },
                 onResumeRoundClick = { navController.navigate("api_resume_round") },
                 onSyncClick = onSyncReferenceData,
+                onSyncRoundsClick = onSyncRounds,
                 onSettingsClick = { navController.navigate("settings") },
                 onLoginClick = { navController.navigate("login") },
                 onLogoutClick = onLogout,
@@ -2019,6 +2073,7 @@ fun StartScreen(
     onNewRoundClick: () -> Unit,
     onResumeRoundClick: () -> Unit,
     onSyncClick: () -> Unit,
+    onSyncRoundsClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
@@ -2079,6 +2134,13 @@ fun StartScreen(
             }
 
             Spacer(modifier = Modifier.weight(1f))
+
+            OutlinedButton(
+                onClick = onSyncRoundsClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Synka rundor")
+            }
 
             OutlinedButton(
                 onClick = onSyncClick,

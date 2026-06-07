@@ -42,16 +42,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerRow
 import nu.linkan.localdiscgolf.data.local.model.RoundHolePlayerStatsRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHeaderRow
 import nu.linkan.localdiscgolf.data.local.model.RoundSummaryHoleRow
+import nu.linkan.localdiscgolf.network.PlayerHoleStatsApiResponse
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoundHoleScreen(
     rows: List<RoundHolePlayerRow>,
     statsRows: List<RoundHolePlayerStatsRow>,
+    holeStatsByPlayerId: Map<Long, PlayerHoleStatsApiResponse>,
+    isLoadingHoleStats: Boolean,
     sequenceNumber: Int,
     totalHoleCount: Int,
     onBack: () -> Unit,
@@ -183,11 +187,12 @@ fun RoundHoleScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(rows) { row ->
-                    val stats = statsRows.firstOrNull { it.playerId == row.playerId && it.holeId == row.holeId }
+                    val stats = holeStatsByPlayerId[row.playerId]
 
                     RoundPlayerThrowsRow(
                         row = row,
                         stats = stats,
+                        isLoadingStats = isLoadingHoleStats,
                         value = inputValues[row.sessionPlayerHoleId] ?: "",
                         onValueChange = { newValue ->
                             if (newValue.all { it.isDigit() }) {
@@ -228,7 +233,8 @@ fun RoundHoleScreen(
 @Composable
 fun RoundPlayerThrowsRow(
     row: RoundHolePlayerRow,
-    stats: RoundHolePlayerStatsRow?,
+    stats: PlayerHoleStatsApiResponse?,
+    isLoadingStats: Boolean,
     value: String,
     onValueChange: (String) -> Unit
 ) {
@@ -246,18 +252,38 @@ fun RoundPlayerThrowsRow(
                 style = MaterialTheme.typography.titleMedium
             )
         }
-        if (stats != null) {
+        if (stats == null) {
             Text(
-                text = "Tidigare: ${stats.timesPlayed} rundor, PB ${stats.bestThrows}, snitt ${"%.2f".format(stats.avgThrows)}",
+                text = if (isLoadingStats) {
+                    "Laddar statistik..."
+                } else {
+                    "Tidigare: 0 rundor, PB 0, snitt 0.00"
+                },
                 style = MaterialTheme.typography.bodySmall
             )
+
             Text(
-                text = "Birdie+: ${stats.birdiesOrBetter}  Par: ${stats.pars} Bogey: ${stats.bogeys}  Dubbel: ${stats.doubleBogeys}  Trippel+: ${stats.tripleBogeysOrWorse}",
+                text = "Senaste 10: - (Svit: 0)",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Birdie+: 0  Par: 0  Bogey: 0  Dubbel: 0  Trippel+: 0",
                 style = MaterialTheme.typography.bodySmall
             )
         } else {
             Text(
-                text = "Ingen tidigare statistik på hålet.",
+                text = "Tidigare: ${stats.played_count} rundor, PB ${stats.personal_best_throws}, snitt ${formatAverage(stats.average_throws)}",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Senaste 10: ${formatOptionalAverage(stats.last_10_average_throws)} (Svit: ${formatStreak(stats.streak)})",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Text(
+                text = "Birdie+: ${stats.birdie_or_better_count}  Par: ${stats.par_count}  Bogey: ${stats.bogey_count}  Dubbel: ${stats.double_bogey_count}  Trippel+: ${stats.triple_bogey_or_worse_count}",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -316,6 +342,26 @@ fun formatRelativeScore(relative: Int): String {
     return when {
         relative > 0 -> "+$relative"
         else -> relative.toString()
+    }
+}
+
+private fun formatAverage(value: Double): String {
+    return String.format(Locale.US, "%.2f", value)
+}
+
+private fun formatOptionalAverage(value: Double?): String {
+    return if (value == null) {
+        "-"
+    } else {
+        formatAverage(value)
+    }
+}
+
+private fun formatStreak(streak: Int): String {
+    return when {
+        streak > 0 -> "+$streak"
+        streak < 0 -> streak.toString()
+        else -> "0"
     }
 }
 

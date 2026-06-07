@@ -48,6 +48,10 @@ interface PlaySessionDao {
         sph.length_snapshot_meters AS lengthSnapshotMeters,
         sph.par_snapshot AS parSnapshot,
         sph.throws_count AS throwsCount,
+        sp.server_player_id AS serverPlayerId,
+        c.server_id AS serverCourseId,
+        sph.server_hole_variant_id AS serverHoleVariantId,
+
 
         COALESCE((
             SELECT SUM(prev.throws_count)
@@ -67,6 +71,8 @@ interface PlaySessionDao {
 
     FROM session_player_hole sph
     INNER JOIN session_player sp ON sp.id = sph.session_player_id
+    INNER JOIN play_session ps ON ps.id = sp.play_session_id
+    INNER JOIN course c ON c.id = ps.course_id
     WHERE sp.play_session_id = :playSessionId
       AND sph.sequence_number = :sequenceNumber
     ORDER BY sp.start_order, sp.id

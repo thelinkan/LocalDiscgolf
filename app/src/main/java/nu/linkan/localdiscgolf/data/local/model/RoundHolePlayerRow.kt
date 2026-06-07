@@ -16,6 +16,10 @@ data class RoundHolePlayerRow(
     val parSnapshot: Int,
     val throwsCount: Int?,
 
+    val serverPlayerId: Long?,
+    val serverCourseId: Long?,
+    val serverHoleVariantId: Long?,
+
     val previousThrowsTotal: Int,
     val previousRelativeToPar: Int
 )

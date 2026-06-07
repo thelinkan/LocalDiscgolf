@@ -1921,6 +1921,15 @@ fun AppNavHost(
 
             val rows = roundHoleRowsByKey["$playSessionId-$sequenceNumber"] ?: emptyList()
             val holeCount = holeCountBySession[playSessionId] ?: 0
+
+            var localHoleStatsByPlayerId by remember(playSessionId, sequenceNumber) {
+                mutableStateOf<Map<Long, PlayerHoleStatsApiResponse>>(emptyMap())
+            }
+
+            var isLoadingLocalHoleStats by remember(playSessionId, sequenceNumber) {
+                mutableStateOf(false)
+            }
+
             val holeId = rows.firstOrNull()?.holeId
             val holeVariantId = rows.firstOrNull()?.holeVariantId
 
@@ -1936,9 +1945,61 @@ fun AppNavHost(
                 emptyList()
             }
 
+            LaunchedEffect(playSessionId, sequenceNumber, rows) {
+                if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                    localHoleStatsByPlayerId = emptyMap()
+                    return@LaunchedEffect
+                }
+
+                if (rows.isEmpty()) {
+                    localHoleStatsByPlayerId = emptyMap()
+                    return@LaunchedEffect
+                }
+
+                isLoadingLocalHoleStats = true
+
+                val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+                val newStatsByPlayerId = mutableMapOf<Long, PlayerHoleStatsApiResponse>()
+
+                rows.forEach { row ->
+                    val serverPlayerId = row.serverPlayerId
+                    val serverCourseId = row.serverCourseId
+                    val serverHoleVariantId = row.serverHoleVariantId
+
+                    if (
+                        serverPlayerId != null &&
+                        serverCourseId != null &&
+                        serverHoleVariantId != null
+                    ) {
+                        val result = withContext(Dispatchers.IO) {
+                            ApiClient.getPlayerHoleStats(
+                                baseUrl = baseUrl,
+                                token = authToken,
+                                playerId = serverPlayerId,
+                                courseId = serverCourseId
+                            )
+                        }
+
+                        result.onSuccess { statsRows ->
+                            val matchingStats = statsRows.firstOrNull { stats ->
+                                stats.hole_variant_id == serverHoleVariantId
+                            }
+
+                            if (matchingStats != null) {
+                                newStatsByPlayerId[row.playerId] = matchingStats
+                            }
+                        }
+                    }
+                }
+
+                localHoleStatsByPlayerId = newStatsByPlayerId
+                isLoadingLocalHoleStats = false
+            }
             RoundHoleScreen(
                 rows = rows,
                 statsRows = statsRows,
+                holeStatsByPlayerId = localHoleStatsByPlayerId,
+                isLoadingHoleStats = isLoadingLocalHoleStats,
                 sequenceNumber = sequenceNumber,
                 totalHoleCount = holeCount,
                 onBack = { navController.popBackStack() },

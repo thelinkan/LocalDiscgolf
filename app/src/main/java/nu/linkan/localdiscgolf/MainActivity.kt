@@ -1124,6 +1124,13 @@ class MainActivity : ComponentActivity() {
                                     updatedAt = updatedAt
                                 )
 
+                                if (apiHost.isNotBlank() && apiPort.isNotBlank() && authToken.isNotBlank()) {
+                                    roundSyncRepository.syncPendingRounds(
+                                        baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort),
+                                        token = authToken
+                                    )
+                                }
+
                                 val pending = db.roundSyncDao().getPendingRoundsForSync()
 
                                 println("Pending rounds for sync: ${pending.size}")
@@ -2014,7 +2021,14 @@ fun AppNavHost(
                 isLoadingHoleStats = isLoadingLocalHoleStats,
                 sequenceNumber = sequenceNumber,
                 totalHoleCount = holeCount,
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    navController.navigate("start") {
+                        popUpTo("start") {
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                    }
+                },
                 onPreviousHole = {
                     val previousSequenceNumber = sequenceNumber - 1
 
@@ -2164,7 +2178,14 @@ fun AppNavHost(
 
             PlayerHoleDetailScreen(
                 rows = rows,
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    navController.navigate("start") {
+                        popUpTo("start") {
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                    }
+                },
             )
         }
 

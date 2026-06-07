@@ -1101,6 +1101,17 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    onUpdateCurrentSequenceNumber = { playSessionId, sequenceNumber ->
+                        lifecycleScope.launch {
+                            withContext(Dispatchers.IO) {
+                                playSessionDao.updateCurrentSequenceNumber(
+                                    playSessionId = playSessionId,
+                                    sequenceNumber = sequenceNumber,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
+                        }
+                    },
                     onUpdateThrowsForHole = { playSessionId, sessionPlayerHoleId, throwsCount ->
                         lifecycleScope.launch {
                             val updatedAt = System.currentTimeMillis()
@@ -1182,6 +1193,7 @@ fun AppNavHost(
     localRoundCreationRepository: LocalRoundCreationRepository,
     localResumeRoundRepository: LocalResumeRoundRepository,
     observeRoundHoleRows: (Long, Int) -> Unit,
+    onUpdateCurrentSequenceNumber: (Long, Int) -> Unit,
     onUpdateThrowsForHole: (Long, Long, Int?) -> Unit,
     onFinishRound: (Long) -> Unit,
     observeSessionHoleCount: (Long) -> Unit,
@@ -2004,14 +2016,24 @@ fun AppNavHost(
                 totalHoleCount = holeCount,
                 onBack = { navController.popBackStack() },
                 onPreviousHole = {
-                    if (sequenceNumber > 1) {
-                        navController.navigate("round/$playSessionId/${sequenceNumber - 1}")
-                    }
+                    val previousSequenceNumber = sequenceNumber - 1
+
+                    onUpdateCurrentSequenceNumber(
+                        playSessionId,
+                        previousSequenceNumber
+                    )
+
+                    navController.navigate("round/$playSessionId/$previousSequenceNumber")
                 },
                 onNextHole = {
-                    if (holeCount > 0 && sequenceNumber < holeCount) {
-                        navController.navigate("round/$playSessionId/${sequenceNumber + 1}")
-                    }
+                    val nextSequenceNumber = sequenceNumber + 1
+
+                    onUpdateCurrentSequenceNumber(
+                        playSessionId,
+                        nextSequenceNumber
+                    )
+
+                    navController.navigate("round/$playSessionId/$nextSequenceNumber")
                 },
                 onShowSummary = {
                     navController.navigate("round_summary_live/$playSessionId/$sequenceNumber")
@@ -2024,6 +2046,11 @@ fun AppNavHost(
                             throwsCount
                         )
                     }
+
+                    onUpdateCurrentSequenceNumber(
+                        playSessionId,
+                        sequenceNumber
+                    )
                 },
                 onFinishRound = {
                     onFinishRound(playSessionId)

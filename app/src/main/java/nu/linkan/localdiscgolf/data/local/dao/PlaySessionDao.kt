@@ -481,6 +481,18 @@ interface PlaySessionDao {
         return playSessionId
     }
 
+    @Query("""
+    UPDATE play_session
+    SET current_sequence_number = :sequenceNumber,
+        updated_at = :updatedAt
+    WHERE id = :playSessionId
+""")
+    suspend fun updateCurrentSequenceNumber(
+        playSessionId: Long,
+        sequenceNumber: Int,
+        updatedAt: Long
+    )
+
     @Transaction
     suspend fun updateThrowsAndMarkSessionDirty(
         playSessionId: Long,

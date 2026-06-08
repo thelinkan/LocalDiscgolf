@@ -2267,7 +2267,7 @@ fun AppNavHost(
                     }
                 }
             )
-        }
+        }               
 
         composable(
             route = "player_hole_stats/{playerId}/{courseId}/{holeNumber}/{holeVariantId}",

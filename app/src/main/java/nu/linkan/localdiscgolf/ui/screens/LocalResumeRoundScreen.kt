@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,8 +39,13 @@ fun LocalResumeRoundScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Button(onClick = onBack) {
-            Text("Tillbaka")
+        IconButton(
+            onClick = onBack
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Tillbaka"
+            )
         }
 
         Text(
@@ -82,6 +91,8 @@ private fun ResumeRoundCard(
     round: LocalResumeRoundListItem,
     onClick: () -> Unit
 ) {
+    val statusText = syncStatusText(round)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -92,21 +103,10 @@ private fun ResumeRoundCard(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = round.courseName,
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Text(
-                    text = syncStatusText(round),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            Text(
+                text = round.courseName,
+                style = MaterialTheme.typography.titleMedium
+            )
 
             Text(
                 text = "Start: ${formatDateTime(round.startedAt)}",
@@ -117,19 +117,37 @@ private fun ResumeRoundCard(
                 text = "Fortsätt på hål ${round.currentSequenceNumber ?: 1}",
                 style = MaterialTheme.typography.bodySmall
             )
+
+            if (statusText != null) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when {
+                        round.syncStatus == "sync_error" -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.secondary
+                    }
+                )
+            }
         }
     }
 }
 
-private fun syncStatusText(round: LocalResumeRoundListItem): String {
-    return when {
-        round.serverId == null -> "Endast lokalt"
-        round.hasDirtyHoles -> "Ändringar väntar"
-        round.syncStatus == "synced" -> "Synkad"
-        round.syncStatus == "pending_update" -> "Ändringar väntar"
-        round.syncStatus == "pending_complete" -> "Avslut väntar"
-        round.syncStatus == "sync_error" -> "Synkfel"
-        else -> round.syncStatus
+private fun syncStatusText(round: LocalResumeRoundListItem): String? {
+    if (round.hasDirtyHoles) {
+        return "Ändringar väntar på synk"
+    }
+
+    return when (round.syncStatus) {
+        "synced" -> null
+        null -> null
+
+        "local_only" -> "Endast lokalt"
+        "pending_create" -> "Väntar på att skapas på servern"
+        "pending_update" -> "Ändringar väntar på synk"
+        "pending_complete" -> "Avslutad lokalt, väntar på synk"
+        "sync_error" -> "Synkfel"
+
+        else -> "Ej synkad"
     }
 }
 

@@ -1211,7 +1211,72 @@ class MainActivity : ComponentActivity() {
                     },
                     onAddHoleVariant = { _, _, _, _, _ -> },
                     onDeleteRound = { _ -> },
-                    onFinishRound = { _ -> },
+                    onFinishRound = { playSessionId ->
+                        lifecycleScope.launch {
+                            val endedAt = System.currentTimeMillis()
+
+                            withContext(Dispatchers.IO) {
+                                playSessionDao.finishPlaySession(
+                                    playSessionId = playSessionId,
+                                    endedAt = endedAt,
+                                    status = "completed",
+                                    updatedAt = endedAt
+                                )
+                            }
+
+                            val syncResult = if (
+                                apiHost.isNotBlank() &&
+                                apiPort.isNotBlank() &&
+                                authToken.isNotBlank()
+                            ) {
+                                withContext(Dispatchers.IO) {
+                                    val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                    roundSyncRepository.syncPendingRounds(
+                                        baseUrl = baseUrl,
+                                        token = authToken
+                                    )
+                                }
+                            } else {
+                                null
+                            }
+
+                            if (syncResult == null) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Rundan avslutad lokalt. Synkas senare.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                syncResult.fold(
+                                    onSuccess = { syncedCount ->
+                                        if (syncedCount > 0) {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Rundan avslutad och synkad",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Rundan avslutad lokalt. Synkas senare.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    onFailure = { error ->
+                                        println("Autosynk efter avslutad runda misslyckades: ${error.message}")
+
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Rundan avslutad lokalt. Synkas senare.",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                )
+                            }
+                        }
+                    },
                     onResumeRound = { _, _ -> }
                 )
             }
@@ -2114,8 +2179,11 @@ fun AppNavHost(
                 },
                 onFinishRound = {
                     onFinishRound(playSessionId)
+
                     navController.navigate("round_summary/$playSessionId") {
-                        popUpTo("start")
+                        popUpTo("round/$playSessionId/$sequenceNumber") {
+                            inclusive = true
+                        }
                     }
                 }
             )

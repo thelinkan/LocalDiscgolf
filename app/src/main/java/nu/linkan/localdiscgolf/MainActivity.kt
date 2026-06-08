@@ -1041,11 +1041,57 @@ class MainActivity : ComponentActivity() {
 
                             result.fold(
                                 onSuccess = { playSessionId ->
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Runda skapad lokalt",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    val syncResult = if (
+                                        apiHost.isNotBlank() &&
+                                        apiPort.isNotBlank() &&
+                                        authToken.isNotBlank()
+                                    ) {
+                                        withContext(Dispatchers.IO) {
+                                            val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
+                                            roundSyncRepository.syncPendingRounds(
+                                                baseUrl = baseUrl,
+                                                token = authToken
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    }
+
+                                    if (syncResult == null) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Runda skapad lokalt",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        syncResult.fold(
+                                            onSuccess = { syncedCount ->
+                                                if (syncedCount > 0) {
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        "Runda skapad och synkad",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        "Runda skapad lokalt. Synkas senare.",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                println("Autosynk efter skapad runda misslyckades: ${error.message}")
+
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "Runda skapad lokalt. Synkas senare.",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        )
+                                    }
 
                                     onCreated(playSessionId)
                                 },

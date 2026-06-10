@@ -11,5 +11,8 @@ data class PlayerSessionRow(
     val totalThrows: Int?,
     val totalRelativeToPar: Int?,
     val playedHoleCount: Int,
-    val totalHoleCount: Int
+    val totalHoleCount: Int,
+    val serverId: Long?,
+    val syncStatus: String?,
+    val hasDirtyHoles: Boolean
 )

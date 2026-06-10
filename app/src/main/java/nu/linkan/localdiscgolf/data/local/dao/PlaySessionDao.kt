@@ -317,7 +317,16 @@ interface PlaySessionDao {
         ps.started_at AS startedAt,
         ps.ended_at AS endedAt,
         ps.status AS status,
-
+        ps.server_id AS serverId,
+        ps.sync_status AS syncStatus,
+        EXISTS (
+            SELECT 1
+            FROM session_player sp_dirty
+            INNER JOIN session_player_hole sph_dirty
+                ON sph_dirty.session_player_id = sp_dirty.id
+            WHERE sp_dirty.play_session_id = ps.id
+              AND sph_dirty.dirty = 1
+        ) AS hasDirtyHoles,
         (
             SELECT COUNT(*)
             FROM session_player sp_count

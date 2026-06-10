@@ -605,6 +605,8 @@ class MainActivity : ComponentActivity() {
                     },
                     apiRoundDetail = apiRoundDetail,
                     onLoadApiRoundDetail = { roundId ->
+                        apiRoundDetail = null
+
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
@@ -1003,11 +1005,19 @@ class MainActivity : ComponentActivity() {
                     onMoveHoleDownInLayout = { _, _ -> },
                     apiPlayerRounds = apiPlayerRounds,
                     onLoadApiPlayerRounds = { playerId, playerName ->
+                        selectedApiPlayerName = playerName
+                        apiPlayerRounds = emptyList()
+
                         if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
-                            Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Logga in och ange server först",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         } else {
                             lifecycleScope.launch {
                                 val baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort)
+
                                 val result = withContext(Dispatchers.IO) {
                                     ApiClient.getPlayerRounds(baseUrl, authToken, playerId)
                                 }
@@ -1018,6 +1028,8 @@ class MainActivity : ComponentActivity() {
                                         apiPlayerRounds = rounds
                                     },
                                     onFailure = { error ->
+                                        apiPlayerRounds = emptyList()
+
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Kunde inte hämta spelarens rundor: ${error.message}",
@@ -1814,8 +1826,16 @@ fun AppNavHost(
                 onBack = { navController.popBackStack() },
                 onRoundsClick = {
                     if (playerId != null) {
-                        onLoadApiPlayerRounds(playerId, selectedApiPlayerName)
-                        navController.navigate("api_player_rounds")
+                        val localPlayer = players.firstOrNull { player ->
+                            player.serverId == playerId
+                        }
+
+                        if (localPlayer != null) {
+                            navController.navigate("player/${localPlayer.id}")
+                        } else {
+                            onLoadApiPlayerRounds(playerId, selectedApiPlayerName)
+                            navController.navigate("api_player_rounds")
+                        }
                     }
                 },
                 onStatsClick = {
@@ -2267,7 +2287,7 @@ fun AppNavHost(
                     }
                 }
             )
-        }               
+        }
 
         composable(
             route = "player_hole_stats/{playerId}/{courseId}/{holeNumber}/{holeVariantId}",

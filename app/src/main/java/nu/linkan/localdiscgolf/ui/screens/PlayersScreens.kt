@@ -136,6 +136,29 @@ fun PlayersScreen(
     }
 }
 
+private fun playerSessionSyncStatusText(session: PlayerSessionRow): String? {
+    if (session.hasDirtyHoles) {
+        return "Ej synkad"
+    }
+
+    if (session.serverId == null) {
+        return "Endast lokalt"
+    }
+
+    return when (session.syncStatus) {
+        null -> null
+        "synced" -> null
+
+        "local_only" -> "Endast lokalt"
+        "pending_create" -> "Ej skapad på servern"
+        "pending_update" -> "Ej synkad"
+        "pending_complete" -> "Avslutad lokalt, väntar på synk"
+        "sync_error" -> "Synkfel"
+
+        else -> "Ej synkad"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerDetailScreen(
@@ -263,6 +286,16 @@ fun PlayerDetailScreen(
                                     text = resultLine,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
+
+                                val syncText = playerSessionSyncStatusText(session)
+
+                                if (syncText != null) {
+                                    Text(
+                                        text = syncText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
 
                             IconButton(onClick = { sessionToDelete = session.playSessionId }) {

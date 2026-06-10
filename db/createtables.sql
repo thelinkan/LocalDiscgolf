@@ -356,3 +356,21 @@ CREATE INDEX ix_player_created_by_user ON player(created_by_user_id);
 
 ALTER TABLE user_account
 ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX ix_play_session_created_by_status_started
+ON play_session(created_by_user_id, status, started_at);
+
+CREATE INDEX ix_play_session_course_status_started
+ON play_session(course_id, status, started_at);
+
+CREATE INDEX ix_session_player_session_approval
+ON session_player(play_session_id, approval_state);
+
+CREATE INDEX ix_session_player_layout
+ON session_player(layout_id);
+
+CREATE INDEX ix_sph_course_variant
+ON session_player_hole(course_id, hole_variant_id);
+
+CREATE INDEX ix_sph_throws
+ON session_player_hole(throws_count);

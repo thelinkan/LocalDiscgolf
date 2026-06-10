@@ -2473,6 +2473,260 @@ def approve_session_player(
     }
 
 # =========================
+# Översiktsstatistik
+# =========================
+
+def require_player_stats_access(player_id: int, current_user: dict) -> dict:
+    player = get_player(player_id)
+
+    if not can_access_player(current_user, player):
+        raise HTTPException(
+            status_code=403,
+            detail="Not allowed to view this player's statistics",
+        )
+
+    return player
+
+
+def int_value(value) -> int:
+    if value is None:
+        return 0
+    return int(value)
+
+
+@app.get("/stats/overview/years")
+def get_stats_overview_years(
+    player_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    require_player_stats_access(player_id, current_user)
+
+    rows = fetch_all(
+        """
+        SELECT
+            YEAR(ps.started_at) AS year,
+            COUNT(DISTINCT ps.course_id) AS course_count,
+            COUNT(DISTINCT ps.id) AS round_count,
+            COALESCE(SUM(sph.throws_count), 0) AS throw_count,
+            COUNT(sph.id) AS hole_count
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+        GROUP BY YEAR(ps.started_at)
+        ORDER BY year DESC
+        """,
+        {"player_id": player_id},
+    )
+
+    return [
+        {
+            "year": int_value(row["year"]),
+            "course_count": int_value(row["course_count"]),
+            "round_count": int_value(row["round_count"]),
+            "throw_count": int_value(row["throw_count"]),
+            "hole_count": int_value(row["hole_count"]),
+        }
+        for row in rows
+    ]
+
+
+@app.get("/stats/overview/activity")
+def get_stats_overview_activity(
+    player_id: int,
+    year: int | None = None,
+    group_by: str = "month",
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    require_player_stats_access(player_id, current_user)
+
+    if group_by not in ("month", "week"):
+        raise HTTPException(
+            status_code=400,
+            detail="group_by must be 'month' or 'week'",
+        )
+
+    selected_year = year or datetime.now().year
+
+    if group_by == "month":
+        period_sql = "DATE_FORMAT(ps.started_at, '%Y-%m')"
+        period_start_sql = "DATE_FORMAT(ps.started_at, '%Y-%m-01')"
+        sort_sql = "DATE_FORMAT(ps.started_at, '%Y-%m')"
+    else:
+        # ISO-liknande vecka: måndag som veckostart.
+        # YEARWEEK(..., 3) använder ISO-regler i MySQL/MariaDB.
+        period_sql = """
+            CONCAT(
+                LEFT(YEARWEEK(ps.started_at, 3), 4),
+                '-W',
+                RIGHT(YEARWEEK(ps.started_at, 3), 2)
+            )
+        """
+        period_start_sql = """
+            DATE_FORMAT(
+                DATE_SUB(DATE(ps.started_at), INTERVAL WEEKDAY(ps.started_at) DAY),
+                '%Y-%m-%d'
+            )
+        """
+        sort_sql = "YEARWEEK(ps.started_at, 3)"
+
+    rows = fetch_all(
+        f"""
+        SELECT
+            {period_sql} AS period,
+            {period_start_sql} AS period_start,
+            COUNT(DISTINCT ps.id) AS round_count,
+            COUNT(sph.id) AS hole_count,
+            COALESCE(SUM(sph.throws_count), 0) AS throw_count
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          AND ps.started_at >= :year_start
+          AND ps.started_at < :next_year_start
+        GROUP BY
+            {period_sql},
+            {period_start_sql}
+        ORDER BY {sort_sql}
+        """,
+        {
+            "player_id": player_id,
+            "year_start": f"{selected_year}-01-01",
+            "next_year_start": f"{selected_year + 1}-01-01",
+        },
+    )
+
+    return [
+        {
+            "period": row["period"],
+            "period_start": row["period_start"],
+            "round_count": int_value(row["round_count"]),
+            "hole_count": int_value(row["hole_count"]),
+            "throw_count": int_value(row["throw_count"]),
+        }
+        for row in rows
+    ]
+
+
+@app.get("/stats/overview/score-distribution")
+def get_stats_overview_score_distribution(
+    player_id: int,
+    year: int | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    require_player_stats_access(player_id, current_user)
+
+    params = {
+        "player_id": player_id,
+        "year_start": None,
+        "next_year_start": None,
+    }
+
+    year_filter_sql = ""
+
+    if year is not None:
+        year_filter_sql = """
+          AND ps.started_at >= :year_start
+          AND ps.started_at < :next_year_start
+        """
+        params["year_start"] = f"{year}-01-01"
+        params["next_year_start"] = f"{year + 1}-01-01"
+
+    row = fetch_one(
+        f"""
+        SELECT
+            COUNT(sph.id) AS total_holes,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot <= -3 THEN 1
+                ELSE 0
+            END), 0) AS albatross_or_better,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = -2 THEN 1
+                ELSE 0
+            END), 0) AS eagle,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = -1 THEN 1
+                ELSE 0
+            END), 0) AS birdie,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = 0 THEN 1
+                ELSE 0
+            END), 0) AS par,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = 1 THEN 1
+                ELSE 0
+            END), 0) AS bogey,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = 2 THEN 1
+                ELSE 0
+            END), 0) AS double_bogey,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = 3 THEN 1
+                ELSE 0
+            END), 0) AS triple_bogey,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot = 4 THEN 1
+                ELSE 0
+            END), 0) AS quadruple_bogey,
+
+            COALESCE(SUM(CASE
+                WHEN sph.throws_count - sph.par_snapshot >= 5 THEN 1
+                ELSE 0
+            END), 0) AS five_bogey_or_worse
+
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          {year_filter_sql}
+        """,
+        params,
+    )
+
+    if not row:
+        row = {}
+
+    return {
+        "player_id": player_id,
+        "year": year,
+        "total_holes": int_value(row.get("total_holes")),
+        "distribution": {
+            "albatross_or_better": int_value(row.get("albatross_or_better")),
+            "eagle": int_value(row.get("eagle")),
+            "birdie": int_value(row.get("birdie")),
+            "par": int_value(row.get("par")),
+            "bogey": int_value(row.get("bogey")),
+            "double_bogey": int_value(row.get("double_bogey")),
+            "triple_bogey": int_value(row.get("triple_bogey")),
+            "quadruple_bogey": int_value(row.get("quadruple_bogey")),
+            "five_bogey_or_worse": int_value(row.get("five_bogey_or_worse")),
+        },
+    }
+
+# =========================
 # Skapa/uppdatera/radera banor
 # =========================
 

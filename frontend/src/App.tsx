@@ -22,6 +22,9 @@ import {
   deleteRound,
   approveSessionPlayer,
   getPendingApprovals,
+  getStatsOverviewYears,
+  getStatsOverviewActivity,
+  getStatsOverviewScoreDistribution,
   changePassword,
   login,
   type CourseApiResponse,
@@ -37,6 +40,10 @@ import {
   type CreateRoundRequest,
   type RoundUpdateRequest,
   type PendingApprovalApiResponse,
+  type StatsActivityGroupBy,
+  type StatsOverviewActivityResponse,
+  type StatsOverviewScoreDistributionResponse,
+  type StatsOverviewYearResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -146,6 +153,19 @@ function App() {
   const [publicDataError, setPublicDataError] = useState<string | null>(null)
 
   const [includeInactiveCourses, setIncludeInactiveCourses] = useState(false)
+
+  const [statsOverviewYears, setStatsOverviewYears] =
+    useState<StatsOverviewYearResponse[]>([])
+
+  const [statsOverviewActivity, setStatsOverviewActivity] =
+    useState<StatsOverviewActivityResponse[]>([])
+
+  const [statsOverviewScoreDistribution, setStatsOverviewScoreDistribution] =
+    useState<StatsOverviewScoreDistributionResponse | null>(null)
+
+  const [selectedStatsYear, setSelectedStatsYear] = useState<number | null>(null)
+  const [statsActivityGroupBy, setStatsActivityGroupBy] =
+    useState<StatsActivityGroupBy>('month')
 
   const [newRoundCourses, setNewRoundCourses] =
     useState<PublicCourseApiResponse[]>([])
@@ -572,15 +592,43 @@ function App() {
     setStatsError(null)
 
     try {
-      const [courseData, layoutData, holeData] = await Promise.all([
-        getCourses(storedToken),
-        getPlayerLayoutStats(storedToken, player.id, null),
-        getPlayerHoleStats(storedToken, player.id, null),
-      ])
+      const [courseData, layoutData, holeData, overviewYears] =
+        await Promise.all([
+          getCourses(storedToken),
+          getPlayerLayoutStats(storedToken, player.id, null),
+          getPlayerHoleStats(storedToken, player.id, null),
+          getStatsOverviewYears(storedToken, player.id),
+        ])
 
       setCourses(courseData)
       setLayoutStats(layoutData)
       setHoleStats(holeData)
+      setStatsOverviewYears(overviewYears)
+
+      const defaultYear =
+        overviewYears.length > 0
+          ? overviewYears[0].year
+          : new Date().getFullYear()
+
+      setSelectedStatsYear(defaultYear)
+      setStatsActivityGroupBy('month')
+
+      const [activityData, distributionData] = await Promise.all([
+        getStatsOverviewActivity(
+          storedToken,
+          player.id,
+          defaultYear,
+          'month',
+        ),
+        getStatsOverviewScoreDistribution(
+          storedToken,
+          player.id,
+          defaultYear,
+        ),
+      ])
+
+      setStatsOverviewActivity(activityData)
+      setStatsOverviewScoreDistribution(distributionData)
     } catch (error) {
       setStatsError(apiErrorText(error, 'Kunde inte hämta statistik.'))
     } finally {
@@ -605,6 +653,64 @@ function App() {
       setRoundsError(apiErrorText(error, 'Kunde inte hämta rundor.'))
     } finally {
       setIsLoadingRounds(false)
+    }
+  }
+
+  async function changeStatsYear(year: number) {
+    if (!storedToken || !selectedPlayer) {
+      return
+    }
+
+    setSelectedStatsYear(year)
+    setIsLoadingStats(true)
+    setStatsError(null)
+
+    try {
+      const [activityData, distributionData] = await Promise.all([
+        getStatsOverviewActivity(
+          storedToken,
+          selectedPlayer.id,
+          year,
+          statsActivityGroupBy,
+        ),
+        getStatsOverviewScoreDistribution(
+          storedToken,
+          selectedPlayer.id,
+          year,
+        ),
+      ])
+
+      setStatsOverviewActivity(activityData)
+      setStatsOverviewScoreDistribution(distributionData)
+    } catch (error) {
+      setStatsError(apiErrorText(error, 'Kunde inte hämta översiktsstatistik.'))
+    } finally {
+      setIsLoadingStats(false)
+    }
+  }
+
+  async function changeStatsActivityGroupBy(groupBy: StatsActivityGroupBy) {
+    if (!storedToken || !selectedPlayer || selectedStatsYear === null) {
+      return
+    }
+
+    setStatsActivityGroupBy(groupBy)
+    setIsLoadingStats(true)
+    setStatsError(null)
+
+    try {
+      const activityData = await getStatsOverviewActivity(
+        storedToken,
+        selectedPlayer.id,
+        selectedStatsYear,
+        groupBy,
+      )
+
+      setStatsOverviewActivity(activityData)
+    } catch (error) {
+      setStatsError(apiErrorText(error, 'Kunde inte hämta aktivitetsstatistik.'))
+    } finally {
+      setIsLoadingStats(false)
     }
   }
 
@@ -1112,11 +1218,20 @@ function App() {
           selectedCourseId={selectedCourseId}
           layoutStats={layoutStats}
           holeStats={holeStats}
+          overviewYears={statsOverviewYears}
+          selectedYear={selectedStatsYear}
+          activityGroupBy={statsActivityGroupBy}
+          activity={statsOverviewActivity}
+          scoreDistribution={statsOverviewScoreDistribution}
           isLoading={isLoadingStats}
           error={statsError}
           onBack={() => setView('players')}
           onRoundsClick={() => void openPlayerRounds(selectedPlayer)}
           onCourseSelected={(courseId) => void changeStatsCourse(courseId)}
+          onYearSelected={(year) => void changeStatsYear(year)}
+          onActivityGroupBySelected={(groupBy) =>
+            void changeStatsActivityGroupBy(groupBy)
+          }
         />
       )}
 

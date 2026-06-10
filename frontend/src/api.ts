@@ -139,6 +139,43 @@ export interface HoleCreateRequest {
   notes?: string | null
 }
 
+export interface StatsOverviewYearResponse {
+  year: number
+  course_count: number
+  round_count: number
+  throw_count: number
+  hole_count: number
+}
+
+export interface StatsOverviewActivityResponse {
+  period: string
+  period_start: string
+  round_count: number
+  hole_count: number
+  throw_count: number
+}
+
+export interface StatsScoreDistributionCounts {
+  albatross_or_better: number
+  eagle: number
+  birdie: number
+  par: number
+  bogey: number
+  double_bogey: number
+  triple_bogey: number
+  quadruple_bogey: number
+  five_bogey_or_worse: number
+}
+
+export interface StatsOverviewScoreDistributionResponse {
+  player_id: number
+  year: number | null
+  total_holes: number
+  distribution: StatsScoreDistributionCounts
+}
+
+export type StatsActivityGroupBy = 'month' | 'week'
+
 export class ApiError extends Error {
   statusCode: number
   responseBody: string
@@ -993,4 +1030,66 @@ export async function approveSessionPlayer(
   )
 
   await parseResponse<unknown>(response)
+}
+
+export async function getStatsOverviewYears(
+  token: string,
+  playerId: number,
+): Promise<StatsOverviewYearResponse[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/stats/overview/years?player_id=${playerId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<StatsOverviewYearResponse[]>(response)
+}
+
+export async function getStatsOverviewActivity(
+  token: string,
+  playerId: number,
+  year: number,
+  groupBy: StatsActivityGroupBy,
+): Promise<StatsOverviewActivityResponse[]> {
+  const query = new URLSearchParams({
+    player_id: String(playerId),
+    year: String(year),
+    group_by: groupBy,
+  })
+
+  const response = await fetch(
+    `${API_BASE_URL}/stats/overview/activity?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<StatsOverviewActivityResponse[]>(response)
+}
+
+export async function getStatsOverviewScoreDistribution(
+  token: string,
+  playerId: number,
+  year: number,
+): Promise<StatsOverviewScoreDistributionResponse> {
+  const query = new URLSearchParams({
+    player_id: String(playerId),
+    year: String(year),
+  })
+
+  const response = await fetch(
+    `${API_BASE_URL}/stats/overview/score-distribution?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<StatsOverviewScoreDistributionResponse>(response)
 }

@@ -2472,6 +2472,188 @@ def approve_session_player(
         "round_id": session_player["play_session_id"],
     }
 
+@app.get("/stats/layouts/{layout_id}/hole-difficulty")
+def get_layout_hole_difficulty_stats(
+    layout_id: int,
+    player_id: int,
+    year: int | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    require_player_stats_access(player_id, current_user)
+
+    layout_holes = get_layout_holes_for_round(layout_id)
+
+    variant_ids = [
+        int(row["hole_variant_id"])
+        for row in layout_holes
+        if row["hole_variant_id"] is not None
+    ]
+
+    if not variant_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Layout has no hole variants",
+        )
+
+    in_clause, in_params = make_in_clause_params("variant_id", variant_ids)
+    year_filter_sql, year_params = make_optional_year_filter(year)
+
+    my_rows = fetch_all(
+        f"""
+        SELECT
+            sph.hole_variant_id,
+            COUNT(*) AS my_count,
+            AVG(sph.throws_count) AS my_average_throws,
+            AVG(sph.throws_count - sph.par_snapshot) AS my_average_relative_to_par
+        FROM session_player_hole sph
+        INNER JOIN session_player sp
+            ON sp.id = sph.session_player_id
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          AND sph.par_snapshot IS NOT NULL
+          AND sph.hole_variant_id IN ({in_clause})
+          {year_filter_sql}
+        GROUP BY sph.hole_variant_id
+        """,
+        {
+            "player_id": player_id,
+            **in_params,
+            **year_params,
+        },
+    )
+
+    global_rows = fetch_all(
+        f"""
+        SELECT
+            sph.hole_variant_id,
+            COUNT(*) AS global_count,
+            AVG(sph.throws_count) AS global_average_throws,
+            AVG(sph.throws_count - sph.par_snapshot) AS global_average_relative_to_par
+        FROM session_player_hole sph
+        INNER JOIN session_player sp
+            ON sp.id = sph.session_player_id
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        WHERE ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          AND sph.par_snapshot IS NOT NULL
+          AND sph.hole_variant_id IN ({in_clause})
+          {year_filter_sql}
+        GROUP BY sph.hole_variant_id
+        """,
+        {
+            **in_params,
+            **year_params,
+        },
+    )
+
+    my_by_variant = {
+        int(row["hole_variant_id"]): row
+        for row in my_rows
+    }
+
+    global_by_variant = {
+        int(row["hole_variant_id"]): row
+        for row in global_rows
+    }
+
+    rows_for_ranking = []
+
+    for layout_hole in layout_holes:
+        hole_variant_id = int(layout_hole["hole_variant_id"])
+
+        my_row = my_by_variant.get(hole_variant_id)
+        global_row = global_by_variant.get(hole_variant_id)
+
+        rows_for_ranking.append(
+            {
+                "hole_variant_id": hole_variant_id,
+                "my_average_relative_to_par": (
+                    my_row["my_average_relative_to_par"]
+                    if my_row
+                    else None
+                ),
+                "global_average_relative_to_par": (
+                    global_row["global_average_relative_to_par"]
+                    if global_row
+                    else None
+                ),
+            }
+        )
+
+    my_rank_map, my_rank_total = build_difficulty_rank_map(
+        rows_for_ranking,
+        "my_average_relative_to_par",
+    )
+
+    global_rank_map, global_rank_total = build_difficulty_rank_map(
+        rows_for_ranking,
+        "global_average_relative_to_par",
+    )
+
+    result = []
+
+    for layout_hole in layout_holes:
+        hole_variant_id = int(layout_hole["hole_variant_id"])
+
+        my_row = my_by_variant.get(hole_variant_id)
+        global_row = global_by_variant.get(hole_variant_id)
+
+        result.append(
+            {
+                "layout_id": layout_id,
+                "year": year,
+                "sequence_number": int_value(layout_hole["sequence_number"]),
+                "hole_id": int_value(layout_hole["hole_id"]),
+                "hole_number": int_value(layout_hole["hole_number"]),
+                "hole_name": layout_hole["hole_name"],
+                "hole_variant_id": hole_variant_id,
+                "tee_name": layout_hole["tee_name"],
+                "basket_name": layout_hole["basket_name"],
+                "par": int_value(layout_hole["par_value"]),
+                "length_meters": int_value(layout_hole["length_meters"]),
+
+                "my_count": int_value(my_row["my_count"]) if my_row else 0,
+                "my_average_throws": (
+                    float_value(my_row["my_average_throws"])
+                    if my_row
+                    else None
+                ),
+                "my_average_relative_to_par": (
+                    float_value(my_row["my_average_relative_to_par"])
+                    if my_row
+                    else None
+                ),
+                "my_rank": my_rank_map.get(hole_variant_id),
+                "my_rank_total": my_rank_total,
+
+                "global_count": (
+                    int_value(global_row["global_count"])
+                    if global_row
+                    else 0
+                ),
+                "global_average_throws": (
+                    float_value(global_row["global_average_throws"])
+                    if global_row
+                    else None
+                ),
+                "global_average_relative_to_par": (
+                    float_value(global_row["global_average_relative_to_par"])
+                    if global_row
+                    else None
+                ),
+                "global_rank": global_rank_map.get(hole_variant_id),
+                "global_rank_total": global_rank_total,
+            }
+        )
+
+    return result
+
 # =========================
 # Översiktsstatistik
 # =========================
@@ -2771,6 +2953,11 @@ def get_layout_variant_ids_for_stats(layout_id: int) -> list[int]:
 
     return variant_ids
 
+def float_value(value, decimals: int = 2) -> float | None:
+    if value is None:
+        return None
+
+    return round(float(value), decimals)
 
 def make_in_clause_params(
     name: str,
@@ -2802,6 +2989,50 @@ def make_optional_year_filter(year: int | None) -> tuple[str, dict]:
         },
     )
 
+def build_difficulty_rank_map(
+    rows: list[dict],
+    value_key: str,
+) -> tuple[dict[int, int], int]:
+    """
+    Returnerar rank inom layoutens hålvarianter.
+
+    Högre snitt relativt par = svårare hål = lägre ranknummer.
+    Rank 1 är alltså svårast.
+
+    Hål utan data får ingen rank.
+    """
+    ranked_values = []
+
+    for row in rows:
+        value = row.get(value_key)
+
+        if value is None:
+            continue
+
+        ranked_values.append(
+            (
+                int(row["hole_variant_id"]),
+                float(value),
+            )
+        )
+
+    ranked_values.sort(key=lambda item: item[1], reverse=True)
+
+    rank_map: dict[int, int] = {}
+    previous_value: float | None = None
+    previous_rank: int | None = None
+
+    for index, (hole_variant_id, value) in enumerate(ranked_values, start=1):
+        if previous_value is not None and value == previous_value:
+            rank = previous_rank if previous_rank is not None else index
+        else:
+            rank = index
+
+        rank_map[hole_variant_id] = rank
+        previous_value = value
+        previous_rank = rank
+
+    return rank_map, len(ranked_values)
 
 def add_cumulative_layout_averages(rows: list[dict]) -> list[dict]:
     running_relative = 0

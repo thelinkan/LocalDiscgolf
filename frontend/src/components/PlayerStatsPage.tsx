@@ -25,6 +25,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import type {
+  NameType,
+  Payload,
+  ValueType,
+} from 'recharts/types/component/DefaultTooltipContent'
 
 interface PlayerStatsPageProps {
   player: SelectablePlayer
@@ -704,37 +709,37 @@ function LayoutDetailStatsSection({
                         <XAxis dataKey="label" />
                         <YAxis allowDecimals />
                         <Tooltip
-                            formatter={(value: unknown, name: unknown) => {
-                              const label =
-                                name === 'result_value'
-                                  ? resultMetric === 'throws'
-                                    ? 'Kast'
-                                    : 'Jämfört med par'
-                                  : 'Kumulativt snitt'
+                          formatter={(value: ValueType, name: NameType) => {
+                            const label =
+                              name === 'result_value'
+                                ? resultMetric === 'throws'
+                                  ? 'Kast'
+                                  : 'Jämfört med par'
+                                : 'Kumulativt snitt'
 
-                              return [value, label]
-                            }}
-                            labelFormatter={(
-                              label: string | number,
-                              payload: Array<{
-                                payload?: LayoutRoundResultApiResponse & {
+                            return [value, label]
+                          }}
+                          labelFormatter={(
+                            label: React.ReactNode,
+                            payload: ReadonlyArray<Payload<ValueType, NameType>>,
+                          ) => {
+                            const row = payload?.[0]?.payload as
+                              | (LayoutRoundResultApiResponse & {
                                   is_longer_round?: boolean
                                   source_hole_count?: number
-                                }
-                              }>,
-                            ) => {
-                              const row = payload?.[0]?.payload
+                                })
+                              | undefined
 
-                              if (!row) {
-                                return label
-                              }
+                            if (!row) {
+                              return label
+                            }
 
-                              const extraText = row.is_longer_round
-                                ? `, längre runda (${row.source_hole_count} hål totalt)`
-                                : ''
+                            const extraText = row.is_longer_round
+                              ? `, längre runda (${row.source_hole_count} hål totalt)`
+                              : ''
 
-                              return `${label}${extraText}`
-                            }}
+                            return `${label}${extraText}`
+                          }}
                         />
                         <Legend />
                         <Line
@@ -793,7 +798,7 @@ function LayoutDetailStatsSection({
                             >
                               {scoreItems.map((entry) => (
                                 <Cell
-                                  key={entry.key}S
+                                  key={entry.key}
                                   fill={scoreDistributionColor(entry.key)}
                                 />
                               ))}

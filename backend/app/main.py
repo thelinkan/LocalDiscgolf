@@ -3365,6 +3365,7 @@ def get_layout_score_distribution_stats(
                 ON sph.session_player_id = sp.id
             LEFT JOIN layout source_l
                 ON source_l.id = sp.layout_id
+            LEFT JOIN layout l ON l.id = sp.layout_id
             WHERE sp.player_id = :player_id
               AND ps.status = 'completed'
               AND sp.approval_state = 'approved'

@@ -3273,6 +3273,7 @@ def get_layout_score_distribution_stats(
                 ON ps.id = sp.play_session_id
             INNER JOIN session_player_hole sph
                 ON sph.session_player_id = sp.id
+            LEFT JOIN layout l ON l.id = sp.layout_id
             WHERE sp.player_id = :player_id
               AND sp.layout_id = :layout_id
               AND ps.status = 'completed'

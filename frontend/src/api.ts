@@ -837,6 +837,32 @@ export async function createLayout(
   return parseResponse<PublicLayoutApiResponse>(response)
 }
 
+export interface LayoutHoleDifficultyApiResponse {
+  layout_id: number
+  year: number | null
+  sequence_number: number
+  hole_id: number
+  hole_number: number
+  hole_name: string | null
+  hole_variant_id: number
+  tee_name: string | null
+  basket_name: string | null
+  par: number
+  length_meters: number
+
+  my_count: number
+  my_average_throws: number | null
+  my_average_relative_to_par: number | null
+  my_rank: number | null
+  my_rank_total: number
+
+  global_count: number
+  global_average_throws: number | null
+  global_average_relative_to_par: number | null
+  global_rank: number | null
+  global_rank_total: number
+}
+
 export async function updateLayout(
   token: string,
   layoutId: number,
@@ -1077,6 +1103,32 @@ export async function getLayoutScoreDistributionStats(
   )
 
   return parseResponse<LayoutScoreDistributionApiResponse>(response)
+}
+
+export async function getLayoutHoleDifficultyStats(
+  token: string,
+  playerId: number,
+  layoutId: number,
+  year: LayoutStatsYearFilter,
+): Promise<LayoutHoleDifficultyApiResponse[]> {
+  const query = new URLSearchParams({
+    player_id: String(playerId),
+  })
+
+  if (year !== null) {
+    query.set('year', String(year))
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/stats/layouts/${layoutId}/hole-difficulty?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<LayoutHoleDifficultyApiResponse[]>(response)
 }
 
 export interface PendingApprovalApiResponse {

@@ -27,6 +27,7 @@ import {
   getStatsOverviewScoreDistribution,
   getLayoutRoundResultsStats,
   getLayoutScoreDistributionStats,
+  getLayoutHoleDifficultyStats,
   changePassword,
   login,
   type CourseApiResponse,
@@ -50,6 +51,7 @@ import {
   type LayoutScoreDistributionApiResponse,
   type LayoutStatsYearFilter,
   type LayoutResultMetric,
+  type LayoutHoleDifficultyApiResponse,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -211,6 +213,9 @@ function App() {
 
   const [selectedLayoutStatsError, setSelectedLayoutStatsError] =
     useState<string | null>(null)
+
+  const [layoutHoleDifficulty, setLayoutHoleDifficulty] =
+    useState<LayoutHoleDifficultyApiResponse[]>([])
 
   const isAdmin = user?.role === 'admin'
 
@@ -627,6 +632,7 @@ function App() {
     setLayoutRoundResults([])
     setLayoutScoreDistribution(null)
     setSelectedLayoutStatsError(null)
+    setLayoutHoleDifficulty([])
 
     try {
       const [courseData, layoutData, holeData, overviewYears] =
@@ -687,25 +693,33 @@ function App() {
     setSelectedLayoutStatsError(null)
 
     try {
-      const [roundResults, scoreDistribution] = await Promise.all([
-        getLayoutRoundResultsStats(
-          storedToken,
-          playerId,
-          layoutId,
-          year,
-          includeLonger,
-        ),
-        getLayoutScoreDistributionStats(
-          storedToken,
-          playerId,
-          layoutId,
-          year,
-          includeLonger,
-        ),
-      ])
+      const [roundResults, scoreDistribution, holeDifficulty] =
+        await Promise.all([
+          getLayoutRoundResultsStats(
+            storedToken,
+            playerId,
+            layoutId,
+            year,
+            includeLonger,
+          ),
+          getLayoutScoreDistributionStats(
+            storedToken,
+            playerId,
+            layoutId,
+            year,
+            includeLonger,
+          ),
+          getLayoutHoleDifficultyStats(
+            storedToken,
+            playerId,
+            layoutId,
+            year,
+          ),
+        ])
 
       setLayoutRoundResults(roundResults)
       setLayoutScoreDistribution(scoreDistribution)
+      setLayoutHoleDifficulty(holeDifficulty)
     } catch (error) {
       setSelectedLayoutStatsError(
         apiErrorText(error, 'Kunde inte hämta layoutstatistik.'),
@@ -726,6 +740,7 @@ function App() {
     setLayoutResultMetric('relative_to_par')
     setLayoutRoundResults([])
     setLayoutScoreDistribution(null)
+    setLayoutHoleDifficulty([])
 
     await loadSelectedLayoutStats(
       selectedPlayer.id,
@@ -1358,6 +1373,7 @@ function App() {
           layoutResultMetric={layoutResultMetric}
           layoutRoundResults={layoutRoundResults}
           layoutScoreDistribution={layoutScoreDistribution}
+          layoutHoleDifficulty={layoutHoleDifficulty}
           isLoadingSelectedLayoutStats={isLoadingSelectedLayoutStats}
           selectedLayoutStatsError={selectedLayoutStatsError}
           isLoading={isLoadingStats}

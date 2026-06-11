@@ -6,12 +6,14 @@ import type {
   LayoutRoundResultApiResponse,
   LayoutScoreDistributionApiResponse,
   LayoutStatsYearFilter,
+  LayoutHoleDifficultyApiResponse,
   StatsActivityGroupBy,
   StatsOverviewActivityResponse,
   StatsOverviewScoreDistributionResponse,
   StatsOverviewYearResponse,
 } from '../api'
 import type { SelectablePlayer } from './PlayersPage'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   CartesianGrid,
@@ -45,6 +47,7 @@ interface PlayerStatsPageProps {
   layoutResultMetric: LayoutResultMetric
   layoutRoundResults: LayoutRoundResultApiResponse[]
   layoutScoreDistribution: LayoutScoreDistributionApiResponse | null
+  layoutHoleDifficulty: LayoutHoleDifficultyApiResponse[]
   isLoadingSelectedLayoutStats: boolean
   selectedLayoutStatsError: string | null
 
@@ -100,6 +103,7 @@ export default function PlayerStatsPage({
   layoutResultMetric,
   layoutRoundResults,
   layoutScoreDistribution,
+  layoutHoleDifficulty,
   isLoadingSelectedLayoutStats,
   selectedLayoutStatsError,
 
@@ -345,6 +349,7 @@ export default function PlayerStatsPage({
               resultMetric={layoutResultMetric}
               roundResults={layoutRoundResults}
               scoreDistribution={layoutScoreDistribution}
+              holeDifficulty={layoutHoleDifficulty}
               isLoading={isLoadingSelectedLayoutStats}
               error={selectedLayoutStatsError}
               onYearSelected={onLayoutYearSelected}
@@ -514,6 +519,139 @@ function LayoutResultDot(props: any) {
   return <circle cx={cx} cy={cy} r={3} fill="#2563eb" />
 }
 
+type HoleDifficultySortKey =
+  | 'sequence_number'
+  | 'par'
+  | 'length_meters'
+  | 'my_average_relative_to_par'
+  | 'my_rank'
+  | 'global_average_relative_to_par'
+  | 'global_rank'
+  | 'my_count'
+  | 'global_count'
+
+type SortDirection = 'asc' | 'desc'
+
+interface HoleDifficultySortState {
+  key: HoleDifficultySortKey
+  direction: SortDirection
+}
+
+function compareNullableNumbers(
+  left: number | null | undefined,
+  right: number | null | undefined,
+  direction: SortDirection,
+): number {
+  const leftMissing = left === null || left === undefined
+  const rightMissing = right === null || right === undefined
+
+  if (leftMissing && rightMissing) {
+    return 0
+  }
+
+  if (leftMissing) {
+    return 1
+  }
+
+  if (rightMissing) {
+    return -1
+  }
+
+  return direction === 'asc' ? left - right : right - left
+}
+
+function sortHoleDifficultyRows(
+  rows: LayoutHoleDifficultyApiResponse[],
+  sortState: HoleDifficultySortState,
+): LayoutHoleDifficultyApiResponse[] {
+  return [...rows].sort((left, right) => {
+    const comparison = compareNullableNumbers(
+      left[sortState.key],
+      right[sortState.key],
+      sortState.direction,
+    )
+
+    if (comparison !== 0) {
+      return comparison
+    }
+
+    return left.sequence_number - right.sequence_number
+  })
+}
+
+function nextSortState(
+  current: HoleDifficultySortState,
+  key: HoleDifficultySortKey,
+): HoleDifficultySortState {
+  if (current.key !== key) {
+    return {
+      key,
+      direction:
+        key === 'sequence_number' ||
+        key === 'par' ||
+        key === 'length_meters'
+          ? 'asc'
+          : 'desc',
+    }
+  }
+
+  return {
+    key,
+    direction: current.direction === 'asc' ? 'desc' : 'asc',
+  }
+}
+
+function sortIndicator(
+  sortState: HoleDifficultySortState,
+  key: HoleDifficultySortKey,
+): string {
+  if (sortState.key !== key) {
+    return ''
+  }
+
+  return sortState.direction === 'asc' ? ' ↑' : ' ↓'
+}
+
+function formatNullableSignedDecimal(value: number | null): string {
+  if (value === null) {
+    return '—'
+  }
+
+  return signedDecimal(value)
+}
+
+function formatNullableDecimal(value: number | null): string {
+  if (value === null) {
+    return '—'
+  }
+
+  return decimalOne.format(value)
+}
+
+function formatRank(rank: number | null, total: number): string {
+  if (rank === null || total === 0) {
+    return '—'
+  }
+
+  return `${rank} av ${total}`
+}
+
+function holeDifficultyTitle(row: LayoutHoleDifficultyApiResponse): string {
+  const parts = [`Hål ${row.hole_number}`]
+
+  if (row.hole_name) {
+    parts.push(row.hole_name)
+  }
+
+  const variantParts = [row.tee_name, row.basket_name].filter(Boolean)
+
+  if (variantParts.length > 0) {
+    parts.push(`(${variantParts.join(' → ')})`)
+  }
+
+  return parts.join(' ')
+}
+
 function LayoutDetailStatsSection({
   stat,
   selectedYear,
@@ -521,6 +659,7 @@ function LayoutDetailStatsSection({
   resultMetric,
   roundResults,
   scoreDistribution,
+  holeDifficulty,
   isLoading,
   error,
   onYearSelected,
@@ -533,6 +672,7 @@ function LayoutDetailStatsSection({
   resultMetric: LayoutResultMetric
   roundResults: LayoutRoundResultApiResponse[]
   scoreDistribution: LayoutScoreDistributionApiResponse | null
+  holeDifficulty: LayoutHoleDifficultyApiResponse[]
   isLoading: boolean
   error: string | null
   onYearSelected: (year: LayoutStatsYearFilter) => void
@@ -541,6 +681,21 @@ function LayoutDetailStatsSection({
 }) {
   const summary = layoutSummary(roundResults)
   const scoreItems = scoreDistributionItems(scoreDistribution)
+
+  const [holeDifficultySort, setHoleDifficultySort] =
+    useState<HoleDifficultySortState>({
+      key: 'sequence_number',
+      direction: 'asc',
+    })
+
+  const sortedHoleDifficulty = useMemo(
+    () => sortHoleDifficultyRows(holeDifficulty, holeDifficultySort),
+    [holeDifficulty, holeDifficultySort],
+  )
+
+  function handleHoleDifficultySort(key: HoleDifficultySortKey) {
+    setHoleDifficultySort((current) => nextSortState(current, key))
+  }
 
   const years = Array.from(
     new Set(roundResults.map((row) => new Date(row.started_at).getFullYear())),
@@ -862,6 +1017,147 @@ function LayoutDetailStatsSection({
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="table-wrapper layout-hole-difficulty-table-wrapper">
+                <div className="table-heading-row">
+                  <div>
+                    <h4>Hålsvårighet</h4>
+                    <p className="muted-text">
+                      Snittet beräknas på alla spelade förekomster av respektive hålvariant.
+                      Rankingen gäller bara hålvarianterna i den valda layouten.
+                    </p>
+                  </div>
+                </div>
+
+                {sortedHoleDifficulty.length === 0 ? (
+                  <p className="muted-text">
+                    Ingen hålsvårighetsstatistik finns för valt urval.
+                  </p>
+                ) : (
+                  <table className="stats-overview-table sortable-stats-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('sequence_number')}
+                          >
+                            Hål{sortIndicator(holeDifficultySort, 'sequence_number')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('par')}
+                          >
+                            Par{sortIndicator(holeDifficultySort, 'par')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('length_meters')}
+                          >
+                            Längd{sortIndicator(holeDifficultySort, 'length_meters')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleHoleDifficultySort('my_average_relative_to_par')
+                            }
+                          >
+                            Mitt snitt
+                            {sortIndicator(holeDifficultySort, 'my_average_relative_to_par')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('my_rank')}
+                          >
+                            Min rank{sortIndicator(holeDifficultySort, 'my_rank')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleHoleDifficultySort('global_average_relative_to_par')
+                            }
+                          >
+                            Globalt snitt
+                            {sortIndicator(
+                              holeDifficultySort,
+                              'global_average_relative_to_par',
+                            )}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('global_rank')}
+                          >
+                            Global rank{sortIndicator(holeDifficultySort, 'global_rank')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('my_count')}
+                          >
+                            Mina rundor{sortIndicator(holeDifficultySort, 'my_count')}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            onClick={() => handleHoleDifficultySort('global_count')}
+                          >
+                            Alla rundor{sortIndicator(holeDifficultySort, 'global_count')}
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedHoleDifficulty.map((row) => (
+                        <tr key={row.hole_variant_id}>
+                          <td>{holeDifficultyTitle(row)}</td>
+                          <td>{row.par}</td>
+                          <td>{integer.format(row.length_meters)} m</td>
+                          <td>
+                            {formatNullableSignedDecimal(
+                              row.my_average_relative_to_par,
+                            )}
+                            {row.my_average_throws !== null && (
+                              <span className="secondary-table-value">
+                                {' '}
+                                ({formatNullableDecimal(row.my_average_throws)} kast)
+                              </span>
+                            )}
+                          </td>
+                          <td>{formatRank(row.my_rank, row.my_rank_total)}</td>
+                          <td>
+                            {formatNullableSignedDecimal(
+                              row.global_average_relative_to_par,
+                            )}
+                            {row.global_average_throws !== null && (
+                              <span className="secondary-table-value">
+                                {' '}
+                                ({formatNullableDecimal(row.global_average_throws)} kast)
+                              </span>
+                            )}
+                          </td>
+                          <td>{formatRank(row.global_rank, row.global_rank_total)}</td>
+                          <td>{integer.format(row.my_count)}</td>
+                          <td>{integer.format(row.global_count)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </>
           )}

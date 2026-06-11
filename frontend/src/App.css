@@ -1335,6 +1335,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
   gap: 1rem;
+  min-width: 0;
 }
 
 .stats-chart-card {
@@ -1342,7 +1343,9 @@
   border-radius: 1rem;
   padding: 1rem;
   background: var(--surface-color);
+  min-width: 0;
 }
+
 
 .stats-chart-card h4 {
   margin-top: 0;
@@ -1350,7 +1353,12 @@
 
 .chart-container {
   width: 100%;
-  min-height: 300px;
+  height: 300px;
+  min-width: 0;
+}
+
+.recharts-responsive-container {
+  min-width: 0;
 }
 
 @media (max-width: 850px) {

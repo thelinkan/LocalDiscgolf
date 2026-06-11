@@ -3055,6 +3055,12 @@ def add_cumulative_layout_averages(rows: list[dict]) -> list[dict]:
                 "course_name": row["course_name"],
                 "layout_id": int_value(row["layout_id"]),
                 "layout_name": row["layout_name"],
+                "source_layout_id": (
+                    int_value(row["source_layout_id"])
+                    if row.get("source_layout_id") is not None
+                    else None
+                ),
+                "source_layout_name": row.get("source_layout_name"),
                 "throws": throws,
                 "par": par,
                 "relative_to_par": relative_to_par,
@@ -3215,7 +3221,8 @@ def get_layout_score_distribution_stats(
             f"""
             SELECT
                 COUNT(sph.id) AS total_holes,
-
+                sp.layout_id AS source_layout_id,
+                l.name AS source_layout_name,
                 COALESCE(SUM(CASE
                     WHEN sph.throws_count - sph.par_snapshot <= -3 THEN 1
                     ELSE 0
@@ -3304,7 +3311,8 @@ def get_layout_score_distribution_stats(
             f"""
             SELECT
                 COUNT(sph.id) AS total_holes,
-
+                sp.layout_id AS source_layout_id,
+                source_l.name AS source_layout_name,
                 COALESCE(SUM(CASE
                     WHEN sph.throws_count - sph.par_snapshot <= -3 THEN 1
                     ELSE 0
@@ -3355,6 +3363,8 @@ def get_layout_score_distribution_stats(
                 ON ps.id = sp.play_session_id
             INNER JOIN session_player_hole sph
                 ON sph.session_player_id = sp.id
+            LEFT JOIN layout source_l
+                ON source_l.id = sp.layout_id
             WHERE sp.player_id = :player_id
               AND ps.status = 'completed'
               AND sp.approval_state = 'approved'

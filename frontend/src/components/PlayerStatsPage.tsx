@@ -886,6 +886,8 @@ function LayoutDetailStatsSection({
                               | (LayoutRoundResultApiResponse & {
                                   is_longer_round?: boolean
                                   source_hole_count?: number
+                                  source_layout_id?: number | null
+                                  source_layout_name?: string | null
                                 })
                               | undefined
 
@@ -1003,9 +1005,15 @@ function LayoutDetailStatsSection({
                               <> av {row.source_hole_count}</>
                             )}
                         </td>
-                        <td>
-                          {row.is_longer_round ? 'Längre runda' : 'Exakt layout'}
-                        </td>
+                        <td
+                            title={
+                              row.source_layout_name
+                                ? `Layout: ${row.source_layout_name}`
+                                : undefined
+                            }
+                          >
+                            {row.is_longer_round ? 'Längre runda' : 'Exakt layout'}
+                        </td> 
                         <td>
                           {resultMetric === 'throws'
                             ? decimalOne.format(row.cumulative_average_throws)

@@ -228,6 +228,8 @@ export interface LayoutRoundResultApiResponse {
   hole_count: number
   cumulative_average_throws: number
   cumulative_average_relative_to_par: number
+  source_layout_id?: number | null
+  source_layout_name?: string | null
   is_longer_round?: boolean
   source_hole_count?: number
 }

@@ -12,6 +12,7 @@ import type {
   StatsOverviewYearResponse,
 } from '../api'
 import type { SelectablePlayer } from './PlayersPage'
+import type { ReactNode } from 'react'
 import {
   CartesianGrid,
   Cell,
@@ -709,20 +710,23 @@ function LayoutDetailStatsSection({
                         <XAxis dataKey="label" />
                         <YAxis allowDecimals />
                         <Tooltip
-                          formatter={(value: ValueType, name: NameType) => {
-                            const label =
+                          formatter={(
+                            value: ValueType | undefined,
+                            name: NameType | undefined,
+                          ): [ReactNode, NameType] => {
+                            const label: NameType =
                               name === 'result_value'
                                 ? resultMetric === 'throws'
                                   ? 'Kast'
                                   : 'Jämfört med par'
                                 : 'Kumulativt snitt'
 
-                            return [value, label]
+                            return [value ?? '', label]
                           }}
                           labelFormatter={(
-                            label: React.ReactNode,
+                            label: ReactNode,
                             payload: ReadonlyArray<Payload<ValueType, NameType>>,
-                          ) => {
+                          ): ReactNode => {
                             const row = payload?.[0]?.payload as
                               | (LayoutRoundResultApiResponse & {
                                   is_longer_round?: boolean

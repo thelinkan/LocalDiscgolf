@@ -101,24 +101,6 @@ export default function PlayerStatsPage({
           </button>
         </div>
       </div>
-      <section className="filter-card">
-        <label htmlFor="course-filter">Bana</label>
-        <select
-          id="course-filter"
-          value={selectedCourseId ?? ''}
-          onChange={(event) => {
-            const value = event.target.value
-            onCourseSelected(value === '' ? null : Number(value))
-          }}
-        >
-          <option value="">Alla banor</option>
-          {courses.map((course) => (
-            <option key={course.id} value={course.id}>
-              {course.name}
-            </option>
-          ))}
-        </select>
-      </section>
 
       {isLoading && <p>Laddar statistik…</p>}
 
@@ -294,6 +276,26 @@ export default function PlayerStatsPage({
             </>
           )}
         </section>
+
+      <section className="filter-card">
+        <label htmlFor="course-filter">Bana</label>
+        <select
+          id="course-filter"
+          value={selectedCourseId ?? ''}
+          onChange={(event) => {
+            const value = event.target.value
+            onCourseSelected(value === '' ? null : Number(value))
+          }}
+        >
+          <option value="">Alla banor</option>
+          {courses.map((course) => (
+            <option key={course.id} value={course.id}>
+              {course.name}
+            </option>
+          ))}
+        </select>
+      </section>
+
 
           <section className="stats-section">
             <h3>Per layout</h3>

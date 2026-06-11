@@ -2833,6 +2833,8 @@ def add_cumulative_layout_averages(rows: list[dict]) -> list[dict]:
                     running_relative / index,
                     2,
                 ),
+                "is_longer_round": int_value(row.get("source_hole_count")) > int_value(row.get("hole_count")),
+                "source_hole_count": int_value(row.get("source_hole_count", row.get("hole_count"))),
             }
         )
 
@@ -2868,7 +2870,8 @@ def get_layout_round_results_stats(
                 SUM(sph.throws_count) AS throws,
                 SUM(sph.par_snapshot) AS par,
                 SUM(sph.throws_count - sph.par_snapshot) AS relative_to_par,
-                COUNT(sph.id) AS hole_count
+                COUNT(sph.id) AS hole_count,
+                COUNT(sph.id) AS source_hole_count
             FROM session_player sp
             INNER JOIN play_session ps
                 ON ps.id = sp.play_session_id
@@ -2918,7 +2921,13 @@ def get_layout_round_results_stats(
             SUM(sph.throws_count) AS throws,
             SUM(sph.par_snapshot) AS par,
             SUM(sph.throws_count - sph.par_snapshot) AS relative_to_par,
-            COUNT(sph.id) AS hole_count
+            COUNT(sph.id) AS hole_count,
+            (
+                SELECT COUNT(*)
+                FROM session_player_hole sph_all
+                WHERE sph_all.session_player_id = sp.id
+                AND sph_all.throws_count IS NOT NULL
+            ) AS source_hole_count
         FROM session_player sp
         INNER JOIN play_session ps
             ON ps.id = sp.play_session_id

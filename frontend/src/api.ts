@@ -211,6 +211,46 @@ async function parseVoidResponse(response: Response): Promise<void> {
   }
 }
 
+export type LayoutStatsYearFilter = number | null
+
+export type LayoutResultMetric = 'relative_to_par' | 'throws'
+
+export interface LayoutRoundResultApiResponse {
+  round_id: number
+  started_at: string
+  course_id: number
+  course_name: string
+  layout_id: number
+  layout_name: string
+  throws: number
+  par: number
+  relative_to_par: number
+  hole_count: number
+  cumulative_average_throws: number
+  cumulative_average_relative_to_par: number
+  is_longer_round?: boolean
+  source_hole_count?: number
+}
+
+export interface LayoutScoreDistributionApiResponse {
+  player_id: number
+  layout_id: number
+  year: number | null
+  include_longer_rounds: boolean
+  total_holes: number
+  distribution: {
+    albatross_or_better: number
+    eagle: number
+    birdie: number
+    par: number
+    bogey: number
+    double_bogey: number
+    triple_bogey: number
+    quadruple_bogey: number
+    five_bogey_or_worse: number
+  }
+}
+
 export async function changePassword(
   token: string,
   username: string,
@@ -981,6 +1021,62 @@ export async function createRound(
   })
 
   return parseResponse<RoundDetailApiResponse>(response)
+}
+
+export async function getLayoutRoundResultsStats(
+  token: string,
+  playerId: number,
+  layoutId: number,
+  year: LayoutStatsYearFilter,
+  includeLongerRounds: boolean,
+): Promise<LayoutRoundResultApiResponse[]> {
+  const query = new URLSearchParams({
+    player_id: String(playerId),
+    include_longer_rounds: String(includeLongerRounds),
+  })
+
+  if (year !== null) {
+    query.set('year', String(year))
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/stats/layouts/${layoutId}/round-results?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<LayoutRoundResultApiResponse[]>(response)
+}
+
+export async function getLayoutScoreDistributionStats(
+  token: string,
+  playerId: number,
+  layoutId: number,
+  year: LayoutStatsYearFilter,
+  includeLongerRounds: boolean,
+): Promise<LayoutScoreDistributionApiResponse> {
+  const query = new URLSearchParams({
+    player_id: String(playerId),
+    include_longer_rounds: String(includeLongerRounds),
+  })
+
+  if (year !== null) {
+    query.set('year', String(year))
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/stats/layouts/${layoutId}/score-distribution?${query.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  return parseResponse<LayoutScoreDistributionApiResponse>(response)
 }
 
 export interface PendingApprovalApiResponse {

@@ -25,6 +25,8 @@ import {
   getStatsOverviewYears,
   getStatsOverviewActivity,
   getStatsOverviewScoreDistribution,
+  getLayoutRoundResultsStats,
+  getLayoutScoreDistributionStats,
   changePassword,
   login,
   type CourseApiResponse,
@@ -44,6 +46,10 @@ import {
   type StatsOverviewActivityResponse,
   type StatsOverviewScoreDistributionResponse,
   type StatsOverviewYearResponse,
+  type LayoutRoundResultApiResponse,
+  type LayoutScoreDistributionApiResponse,
+  type LayoutStatsYearFilter,
+  type LayoutResultMetric,
 } from './api'
 import PlayersPage, {
   type SelectablePlayer,
@@ -182,6 +188,29 @@ function App() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalApiResponse[]>([])
   const [isLoadingPendingApprovals, setIsLoadingPendingApprovals] = useState(false)
   const [pendingApprovalsError, setPendingApprovalsError] = useState<string | null>(null)
+
+  const [selectedLayoutStat, setSelectedLayoutStat] =
+    useState<PlayerLayoutStatsApiResponse | null>(null)
+
+  const [selectedLayoutYear, setSelectedLayoutYear] =
+    useState<LayoutStatsYearFilter>(null)
+
+  const [includeLongerRounds, setIncludeLongerRounds] = useState(false)
+
+  const [layoutResultMetric, setLayoutResultMetric] =
+    useState<LayoutResultMetric>('relative_to_par')
+
+  const [layoutRoundResults, setLayoutRoundResults] =
+    useState<LayoutRoundResultApiResponse[]>([])
+
+  const [layoutScoreDistribution, setLayoutScoreDistribution] =
+    useState<LayoutScoreDistributionApiResponse | null>(null)
+
+  const [isLoadingSelectedLayoutStats, setIsLoadingSelectedLayoutStats] =
+    useState(false)
+
+  const [selectedLayoutStatsError, setSelectedLayoutStatsError] =
+    useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
 
@@ -591,6 +620,14 @@ function App() {
     setIsLoadingStats(true)
     setStatsError(null)
 
+    setSelectedLayoutStat(null)
+    setSelectedLayoutYear(null)
+    setIncludeLongerRounds(false)
+    setLayoutResultMetric('relative_to_par')
+    setLayoutRoundResults([])
+    setLayoutScoreDistribution(null)
+    setSelectedLayoutStatsError(null)
+
     try {
       const [courseData, layoutData, holeData, overviewYears] =
         await Promise.all([
@@ -634,6 +671,98 @@ function App() {
     } finally {
       setIsLoadingStats(false)
     }
+  }
+
+  async function loadSelectedLayoutStats(
+    playerId: number,
+    layoutId: number,
+    year: LayoutStatsYearFilter,
+    includeLonger: boolean,
+  ) {
+    if (!storedToken) {
+      return
+    }
+
+    setIsLoadingSelectedLayoutStats(true)
+    setSelectedLayoutStatsError(null)
+
+    try {
+      const [roundResults, scoreDistribution] = await Promise.all([
+        getLayoutRoundResultsStats(
+          storedToken,
+          playerId,
+          layoutId,
+          year,
+          includeLonger,
+        ),
+        getLayoutScoreDistributionStats(
+          storedToken,
+          playerId,
+          layoutId,
+          year,
+          includeLonger,
+        ),
+      ])
+
+      setLayoutRoundResults(roundResults)
+      setLayoutScoreDistribution(scoreDistribution)
+    } catch (error) {
+      setSelectedLayoutStatsError(
+        apiErrorText(error, 'Kunde inte hämta layoutstatistik.'),
+      )
+    } finally {
+      setIsLoadingSelectedLayoutStats(false)
+    }
+  }
+
+  async function openLayoutStats(stat: PlayerLayoutStatsApiResponse) {
+    if (!selectedPlayer) {
+      return
+    }
+
+    setSelectedLayoutStat(stat)
+    setSelectedLayoutYear(null)
+    setIncludeLongerRounds(false)
+    setLayoutResultMetric('relative_to_par')
+    setLayoutRoundResults([])
+    setLayoutScoreDistribution(null)
+
+    await loadSelectedLayoutStats(
+      selectedPlayer.id,
+      stat.layout_id,
+      null,
+      false,
+    )
+  }
+
+  async function changeSelectedLayoutYear(year: LayoutStatsYearFilter) {
+    if (!selectedPlayer || !selectedLayoutStat) {
+      return
+    }
+
+    setSelectedLayoutYear(year)
+
+    await loadSelectedLayoutStats(
+      selectedPlayer.id,
+      selectedLayoutStat.layout_id,
+      year,
+      includeLongerRounds,
+    )
+  }
+
+  async function changeIncludeLongerRounds(checked: boolean) {
+    if (!selectedPlayer || !selectedLayoutStat) {
+      return
+    }
+
+    setIncludeLongerRounds(checked)
+
+    await loadSelectedLayoutStats(
+      selectedPlayer.id,
+      selectedLayoutStat.layout_id,
+      selectedLayoutYear,
+      checked,
+    )
   }
 
   async function openPlayerRounds(player: SelectablePlayer) {
@@ -1223,6 +1352,14 @@ function App() {
           activityGroupBy={statsActivityGroupBy}
           activity={statsOverviewActivity}
           scoreDistribution={statsOverviewScoreDistribution}
+          selectedLayoutStat={selectedLayoutStat}
+          selectedLayoutYear={selectedLayoutYear}
+          includeLongerRounds={includeLongerRounds}
+          layoutResultMetric={layoutResultMetric}
+          layoutRoundResults={layoutRoundResults}
+          layoutScoreDistribution={layoutScoreDistribution}
+          isLoadingSelectedLayoutStats={isLoadingSelectedLayoutStats}
+          selectedLayoutStatsError={selectedLayoutStatsError}
           isLoading={isLoadingStats}
           error={statsError}
           onBack={() => setView('players')}
@@ -1232,6 +1369,12 @@ function App() {
           onActivityGroupBySelected={(groupBy) =>
             void changeStatsActivityGroupBy(groupBy)
           }
+          onLayoutSelected={(stat) => void openLayoutStats(stat)}
+          onLayoutYearSelected={(year) => void changeSelectedLayoutYear(year)}
+          onIncludeLongerRoundsChanged={(checked) =>
+            void changeIncludeLongerRounds(checked)
+          }
+          onLayoutResultMetricChanged={setLayoutResultMetric}
         />
       )}
 

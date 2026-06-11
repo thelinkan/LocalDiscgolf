@@ -2,6 +2,10 @@ import type {
   CourseApiResponse,
   PlayerHoleStatsApiResponse,
   PlayerLayoutStatsApiResponse,
+  LayoutResultMetric,
+  LayoutRoundResultApiResponse,
+  LayoutScoreDistributionApiResponse,
+  LayoutStatsYearFilter,
   StatsActivityGroupBy,
   StatsOverviewActivityResponse,
   StatsOverviewScoreDistributionResponse,
@@ -28,6 +32,17 @@ interface PlayerStatsPageProps {
   selectedCourseId: number | null
   layoutStats: PlayerLayoutStatsApiResponse[]
   holeStats: PlayerHoleStatsApiResponse[]
+
+  selectedLayoutStat: PlayerLayoutStatsApiResponse | null
+  selectedLayoutYear: LayoutStatsYearFilter
+  includeLongerRounds: boolean
+  layoutResultMetric: LayoutResultMetric
+  layoutRoundResults: LayoutRoundResultApiResponse[]
+  layoutScoreDistribution: LayoutScoreDistributionApiResponse | null
+  isLoadingSelectedLayoutStats: boolean
+  selectedLayoutStatsError: string | null
+
+
   overviewYears: StatsOverviewYearResponse[]
   selectedYear: number | null
   activityGroupBy: StatsActivityGroupBy
@@ -40,6 +55,11 @@ interface PlayerStatsPageProps {
   onRoundsClick: () => void
   onYearSelected: (year: number) => void
   onActivityGroupBySelected: (groupBy: StatsActivityGroupBy) => void
+
+  onLayoutSelected: (stat: PlayerLayoutStatsApiResponse) => void
+  onLayoutYearSelected: (year: LayoutStatsYearFilter) => void
+  onIncludeLongerRoundsChanged: (checked: boolean) => void
+  onLayoutResultMetricChanged: (metric: LayoutResultMetric) => void  
 }
 
 const decimalOne = new Intl.NumberFormat('sv-SE', {
@@ -67,18 +87,33 @@ export default function PlayerStatsPage({
   selectedCourseId,
   layoutStats,
   holeStats,
-  isLoading,
+
+  selectedLayoutStat,
+  selectedLayoutYear,
+  includeLongerRounds,
+  layoutResultMetric,
+  layoutRoundResults,
+  layoutScoreDistribution,
+  isLoadingSelectedLayoutStats,
+  selectedLayoutStatsError,
+
   overviewYears,
   selectedYear,
   activityGroupBy,
   activity,
   scoreDistribution,
-  onYearSelected,
-  onActivityGroupBySelected,
+  isLoading,
   error,
   onBack,
   onRoundsClick,
   onCourseSelected,
+  onYearSelected,
+  onActivityGroupBySelected,
+
+  onLayoutSelected,
+  onLayoutYearSelected,
+  onIncludeLongerRoundsChanged,
+  onLayoutResultMetricChanged,
 }: PlayerStatsPageProps) {
   return (
     <main className="content-page">
@@ -296,6 +331,22 @@ export default function PlayerStatsPage({
         </select>
       </section>
 
+          {selectedLayoutStat && (
+            <LayoutDetailStatsSection
+              stat={selectedLayoutStat}
+              selectedYear={selectedLayoutYear}
+              includeLongerRounds={includeLongerRounds}
+              resultMetric={layoutResultMetric}
+              roundResults={layoutRoundResults}
+              scoreDistribution={layoutScoreDistribution}
+              isLoading={isLoadingSelectedLayoutStats}
+              error={selectedLayoutStatsError}
+              onYearSelected={onLayoutYearSelected}
+              onIncludeLongerRoundsChanged={onIncludeLongerRoundsChanged}
+              onResultMetricChanged={onLayoutResultMetricChanged}
+            />
+          )}
+
 
           <section className="stats-section">
             <h3>Per layout</h3>
@@ -308,6 +359,7 @@ export default function PlayerStatsPage({
                   <LayoutStatsCard
                     key={stat.layout_id}
                     stat={stat}
+                    onClick={() => onLayoutSelected(stat)}
                   />
                 ))}
               </div>
@@ -370,13 +422,466 @@ function scoreDistributionColor(key: string): string {
   }
 }
 
-function LayoutStatsCard({
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
+
+function averageOfLast(
+  rows: LayoutRoundResultApiResponse[],
+  count: number,
+  field: 'throws' | 'relative_to_par',
+): number | null {
+  if (rows.length < count) {
+    return null
+  }
+
+  const lastRows = rows.slice(-count)
+  const sum = lastRows.reduce((total, row) => total + row[field], 0)
+
+  return sum / count
+}
+
+function bestRound(rows: LayoutRoundResultApiResponse[]) {
+  if (rows.length === 0) {
+    return null
+  }
+
+  return [...rows].sort((a, b) => {
+    if (a.relative_to_par !== b.relative_to_par) {
+      return a.relative_to_par - b.relative_to_par
+    }
+
+    return a.throws - b.throws
+  })[0]
+}
+
+function layoutSummary(rows: LayoutRoundResultApiResponse[]) {
+  if (rows.length === 0) {
+    return null
+  }
+
+  const throwSum = rows.reduce((total, row) => total + row.throws, 0)
+  const relativeSum = rows.reduce(
+    (total, row) => total + row.relative_to_par,
+    0,
+  )
+  const best = bestRound(rows)
+
+  return {
+    roundCount: rows.length,
+    best,
+    averageThrows: throwSum / rows.length,
+    averageRelativeToPar: relativeSum / rows.length,
+    last5Throws: averageOfLast(rows, 5, 'throws'),
+    last5Relative: averageOfLast(rows, 5, 'relative_to_par'),
+    last10Throws: averageOfLast(rows, 10, 'throws'),
+    last10Relative: averageOfLast(rows, 10, 'relative_to_par'),
+    last20Throws: averageOfLast(rows, 20, 'throws'),
+    last20Relative: averageOfLast(rows, 20, 'relative_to_par'),
+  }
+}
+
+function LayoutResultDot(props: any) {
+  const { cx, cy, payload } = props
+
+  if (cx === undefined || cy === undefined) {
+    return null
+  }
+
+  if (payload?.is_longer_round) {
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={5}
+        fill="#f97316"
+        stroke="#7c2d12"
+        strokeWidth={1}
+      />
+    )
+  }
+
+  return <circle cx={cx} cy={cy} r={3} fill="#2563eb" />
+}
+
+function LayoutDetailStatsSection({
   stat,
+  selectedYear,
+  includeLongerRounds,
+  resultMetric,
+  roundResults,
+  scoreDistribution,
+  isLoading,
+  error,
+  onYearSelected,
+  onIncludeLongerRoundsChanged,
+  onResultMetricChanged,
 }: {
   stat: PlayerLayoutStatsApiResponse
+  selectedYear: LayoutStatsYearFilter
+  includeLongerRounds: boolean
+  resultMetric: LayoutResultMetric
+  roundResults: LayoutRoundResultApiResponse[]
+  scoreDistribution: LayoutScoreDistributionApiResponse | null
+  isLoading: boolean
+  error: string | null
+  onYearSelected: (year: LayoutStatsYearFilter) => void
+  onIncludeLongerRoundsChanged: (checked: boolean) => void
+  onResultMetricChanged: (metric: LayoutResultMetric) => void
+}) {
+  const summary = layoutSummary(roundResults)
+  const scoreItems = scoreDistributionItems(scoreDistribution)
+
+  const years = Array.from(
+    new Set(roundResults.map((row) => new Date(row.started_at).getFullYear())),
+  ).sort((a, b) => b - a)
+
+  const chartData = roundResults.map((row, index) => ({
+    ...row,
+    round_index: index + 1,
+    label: formatDate(row.started_at),
+    result_value:
+      resultMetric === 'throws'
+        ? row.throws
+        : row.relative_to_par,
+    cumulative_average_value:
+      resultMetric === 'throws'
+        ? row.cumulative_average_throws
+        : row.cumulative_average_relative_to_par,
+  }))
+
+  return (
+    <section className="stats-section selected-layout-section">
+      <div className="stats-section-heading">
+        <div>
+          <h3>
+            {stat.course_name} - {stat.layout_name}
+          </h3>
+          <p className="muted-text">
+            Par {stat.total_par}, {stat.hole_count} hål,{' '}
+            {integer.format(stat.total_length_meters)} meter
+          </p>
+        </div>
+
+        <div className="layout-stats-controls">
+          <label>
+            År
+            <select
+              value={selectedYear ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+                onYearSelected(value === '' ? null : Number(value))
+              }}
+            >
+              <option value="">Alla år</option>
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Diagram
+            <select
+              value={resultMetric}
+              onChange={(event) =>
+                onResultMetricChanged(event.target.value as LayoutResultMetric)
+              }
+            >
+              <option value="relative_to_par">Jämfört med par</option>
+              <option value="throws">Antal kast</option>
+            </select>
+          </label>
+
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={includeLongerRounds}
+              onChange={(event) =>
+                onIncludeLongerRoundsChanged(event.target.checked)
+              }
+            />
+            Ta med längre rundor
+          </label>
+        </div>
+      </div>
+
+      {isLoading && <p>Laddar layoutstatistik…</p>}
+
+      {error && <p className="error-message">{error}</p>}
+
+      {!isLoading && !error && (
+        <>
+          {summary === null ? (
+            <p className="muted-text">
+              Ingen statistik finns för valt urval.
+            </p>
+          ) : (
+            <>
+              <div className="layout-summary-grid">
+                <article className="layout-summary-card">
+                  <span>Antal rundor</span>
+                  <strong>{summary.roundCount}</strong>
+                </article>
+
+                <article className="layout-summary-card">
+                  <span>Personbästa</span>
+                  <strong>
+                    {summary.best?.throws}{' '}
+                    ({signedInteger(summary.best?.relative_to_par ?? 0)})
+                  </strong>
+                </article>
+
+                <article className="layout-summary-card">
+                  <span>Snitt</span>
+                  <strong>
+                    {decimalOne.format(summary.averageThrows)}{' '}
+                    ({signedDecimal(summary.averageRelativeToPar)})
+                  </strong>
+                </article>
+
+                {summary.last5Throws !== null &&
+                  summary.last5Relative !== null && (
+                    <article className="layout-summary-card">
+                      <span>Snitt 5 senaste</span>
+                      <strong>
+                        {decimalOne.format(summary.last5Throws)}{' '}
+                        ({signedDecimal(summary.last5Relative)})
+                      </strong>
+                    </article>
+                  )}
+
+                {summary.last10Throws !== null &&
+                  summary.last10Relative !== null && (
+                    <article className="layout-summary-card">
+                      <span>Snitt 10 senaste</span>
+                      <strong>
+                        {decimalOne.format(summary.last10Throws)}{' '}
+                        ({signedDecimal(summary.last10Relative)})
+                      </strong>
+                    </article>
+                  )}
+
+                {summary.last20Throws !== null &&
+                  summary.last20Relative !== null && (
+                    <article className="layout-summary-card">
+                      <span>Snitt 20 senaste</span>
+                      <strong>
+                        {decimalOne.format(summary.last20Throws)}{' '}
+                        ({signedDecimal(summary.last20Relative)})
+                      </strong>
+                    </article>
+                  )}
+              </div>
+
+              <div className="stats-chart-grid">
+                <article className="stats-chart-card">
+                  <div className="chart-card-heading">
+                    <h4>
+                      Resultat per runda
+                    </h4>
+                    {includeLongerRounds && (
+                      <p className="muted-text">
+                        Orange punkt = längre runda där endast layoutens hål
+                        räknas.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="chart-container">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={chartData}
+                        margin={{ top: 10, right: 20, bottom: 10, left: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis allowDecimals />
+                        <Tooltip
+                            formatter={(value: unknown, name: unknown) => {
+                              const label =
+                                name === 'result_value'
+                                  ? resultMetric === 'throws'
+                                    ? 'Kast'
+                                    : 'Jämfört med par'
+                                  : 'Kumulativt snitt'
+
+                              return [value, label]
+                            }}
+                            labelFormatter={(
+                              label: string | number,
+                              payload: Array<{
+                                payload?: LayoutRoundResultApiResponse & {
+                                  is_longer_round?: boolean
+                                  source_hole_count?: number
+                                }
+                              }>,
+                            ) => {
+                              const row = payload?.[0]?.payload
+
+                              if (!row) {
+                                return label
+                              }
+
+                              const extraText = row.is_longer_round
+                                ? `, längre runda (${row.source_hole_count} hål totalt)`
+                                : ''
+
+                              return `${label}${extraText}`
+                            }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="result_value"
+                          name={
+                            resultMetric === 'throws'
+                              ? 'Kast'
+                              : 'Jämfört med par'
+                          }
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          dot={<LayoutResultDot />}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="cumulative_average_value"
+                          name="Kumulativt snitt"
+                          stroke="#111827"
+                          strokeWidth={2}
+                          strokeDasharray="6 4"
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+
+                <article className="stats-chart-card">
+                  <h4>Scorefördelning</h4>
+
+                  {scoreItems.length === 0 ? (
+                    <p className="muted-text">
+                      Ingen scorefördelning för valt urval.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="chart-container">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Tooltip />
+                            <Legend />
+                            <Pie
+                              data={scoreItems}
+                              dataKey="value"
+                              nameKey="label"
+                              outerRadius={105}
+                              label={({
+                              name,
+                              value,
+                            }: {
+                              name?: string | number
+                              value?: string | number
+                            }) => `${name}: ${value}`}
+                            >
+                              {scoreItems.map((entry) => (
+                                <Cell
+                                  key={entry.key}S
+                                  fill={scoreDistributionColor(entry.key)}
+                                />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {scoreDistribution && (
+                        <p className="muted-text">
+                          Totalt {integer.format(scoreDistribution.total_holes)} hål.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </article>
+              </div>
+
+              <div className="table-wrapper layout-rounds-table-wrapper">
+                <table className="stats-overview-table">
+                  <thead>
+                    <tr>
+                      <th>Datum</th>
+                      <th>Kast</th>
+                      <th>Par</th>
+                      <th>Resultat</th>
+                      <th>Hål</th>
+                      <th>Typ</th>
+                      <th>Kumulativt snitt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roundResults.map((row) => (
+                      <tr key={row.round_id}>
+                        <td>{formatDate(row.started_at)}</td>
+                        <td>{row.throws}</td>
+                        <td>{row.par}</td>
+                        <td>{signedInteger(row.relative_to_par)}</td>
+                        <td>
+                          {row.hole_count}
+                          {row.is_longer_round &&
+                            row.source_hole_count !== undefined && (
+                              <> av {row.source_hole_count}</>
+                            )}
+                        </td>
+                        <td>
+                          {row.is_longer_round ? 'Längre runda' : 'Exakt layout'}
+                        </td>
+                        <td>
+                          {resultMetric === 'throws'
+                            ? decimalOne.format(row.cumulative_average_throws)
+                            : signedDecimal(
+                                row.cumulative_average_relative_to_par,
+                              )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function LayoutStatsCard({
+  stat,
+  onClick,
+}: {
+  stat: PlayerLayoutStatsApiResponse
+  onClick: () => void
 }) {
   return (
-    <article className="stats-card">
+    <article
+      className="stats-card clickable-stats-card"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
+    >
       <h4>
         {stat.course_name} - {stat.layout_name}
       </h4>

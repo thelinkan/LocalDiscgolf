@@ -10,6 +10,7 @@ import type {
 import type { SelectablePlayer } from './PlayersPage'
 import {
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -269,7 +270,14 @@ export default function PlayerStatsPage({
                               nameKey="label"
                               outerRadius={105}
                               label
-                            />
+                            >
+                              {scoreDistributionItems(scoreDistribution).map((entry) => (
+                                <Cell
+                                  key={entry.key}
+                                  fill={scoreDistributionColor(entry.key)}
+                                />
+                              ))}
+                            </Pie>
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
@@ -324,6 +332,40 @@ export default function PlayerStatsPage({
       )}
     </main>
   )
+}
+
+function scoreDistributionColor(key: string): string {
+  switch (key) {
+    case 'albatross_or_better':
+      return '#14532d' // mycket mörkgrön
+
+    case 'eagle':
+      return '#15803d' // mörkgrön
+
+    case 'birdie':
+      return '#86efac' // ljusgrön
+
+    case 'par':
+      return '#9ca3af' // grå
+
+    case 'bogey':
+      return '#fecaca' // ljusröd
+
+    case 'double_bogey':
+      return '#f87171' // röd
+
+    case 'triple_bogey':
+      return '#dc2626' // tydligt röd
+
+    case 'quadruple_bogey':
+      return '#991b1b' // mörkröd
+
+    case 'five_bogey_or_worse':
+      return '#450a0a' // mycket mörkröd
+
+    default:
+      return '#d1d5db'
+  }
 }
 
 function LayoutStatsCard({

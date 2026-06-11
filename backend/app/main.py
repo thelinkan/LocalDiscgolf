@@ -2726,6 +2726,450 @@ def get_stats_overview_score_distribution(
         },
     }
 
+def get_layout_for_stats(layout_id: int) -> dict:
+    layout = fetch_one(
+        """
+        SELECT
+            l.id,
+            l.course_id,
+            c.name AS course_name,
+            l.name AS layout_name,
+            l.is_active
+        FROM layout l
+        INNER JOIN course c
+            ON c.id = l.course_id
+        WHERE l.id = :layout_id
+        """,
+        {"layout_id": layout_id},
+    )
+
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+
+    return layout
+
+
+def get_layout_variant_ids_for_stats(layout_id: int) -> list[int]:
+    rows = fetch_all(
+        """
+        SELECT lh.hole_variant_id
+        FROM layout_hole lh
+        WHERE lh.layout_id = :layout_id
+          AND lh.hole_variant_id IS NOT NULL
+        ORDER BY lh.sequence_number
+        """,
+        {"layout_id": layout_id},
+    )
+
+    variant_ids = [int(row["hole_variant_id"]) for row in rows]
+
+    if not variant_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Layout has no hole variants",
+        )
+
+    return variant_ids
+
+
+def make_in_clause_params(
+    name: str,
+    values: list[int],
+) -> tuple[str, dict]:
+    params = {}
+    placeholders = []
+
+    for index, value in enumerate(values):
+        key = f"{name}_{index}"
+        placeholders.append(f":{key}")
+        params[key] = value
+
+    return ", ".join(placeholders), params
+
+
+def make_optional_year_filter(year: int | None) -> tuple[str, dict]:
+    if year is None:
+        return "", {}
+
+    return (
+        """
+          AND ps.started_at >= :year_start
+          AND ps.started_at < :next_year_start
+        """,
+        {
+            "year_start": f"{year}-01-01",
+            "next_year_start": f"{year + 1}-01-01",
+        },
+    )
+
+
+def add_cumulative_layout_averages(rows: list[dict]) -> list[dict]:
+    running_relative = 0
+    running_throws = 0
+    result = []
+
+    for index, row in enumerate(rows, start=1):
+        throws = int_value(row["throws"])
+        par = int_value(row["par"])
+        relative_to_par = int_value(row["relative_to_par"])
+
+        running_throws += throws
+        running_relative += relative_to_par
+
+        result.append(
+            {
+                "round_id": int_value(row["round_id"]),
+                "started_at": row["started_at"],
+                "course_id": int_value(row["course_id"]),
+                "course_name": row["course_name"],
+                "layout_id": int_value(row["layout_id"]),
+                "layout_name": row["layout_name"],
+                "throws": throws,
+                "par": par,
+                "relative_to_par": relative_to_par,
+                "hole_count": int_value(row["hole_count"]),
+                "cumulative_average_throws": round(running_throws / index, 2),
+                "cumulative_average_relative_to_par": round(
+                    running_relative / index,
+                    2,
+                ),
+            }
+        )
+
+    return result
+
+
+@app.get("/stats/layouts/{layout_id}/round-results")
+def get_layout_round_results_stats(
+    layout_id: int,
+    player_id: int,
+    year: int | None = None,
+    include_longer_rounds: bool = False,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    require_player_stats_access(player_id, current_user)
+
+    layout = get_layout_for_stats(layout_id)
+    variant_ids = get_layout_variant_ids_for_stats(layout_id)
+    layout_hole_count = len(variant_ids)
+
+    year_filter_sql, year_params = make_optional_year_filter(year)
+
+    if not include_longer_rounds:
+        rows = fetch_all(
+            f"""
+            SELECT
+                ps.id AS round_id,
+                ps.started_at,
+                ps.course_id,
+                c.name AS course_name,
+                sp.layout_id,
+                l.name AS layout_name,
+                SUM(sph.throws_count) AS throws,
+                SUM(sph.par_snapshot) AS par,
+                SUM(sph.throws_count - sph.par_snapshot) AS relative_to_par,
+                COUNT(sph.id) AS hole_count
+            FROM session_player sp
+            INNER JOIN play_session ps
+                ON ps.id = sp.play_session_id
+            INNER JOIN course c
+                ON c.id = ps.course_id
+            INNER JOIN layout l
+                ON l.id = sp.layout_id
+            INNER JOIN session_player_hole sph
+                ON sph.session_player_id = sp.id
+            WHERE sp.player_id = :player_id
+              AND sp.layout_id = :layout_id
+              AND ps.status = 'completed'
+              AND sp.approval_state = 'approved'
+              AND sph.throws_count IS NOT NULL
+              {year_filter_sql}
+            GROUP BY
+                ps.id,
+                ps.started_at,
+                ps.course_id,
+                c.name,
+                sp.layout_id,
+                l.name
+            HAVING COUNT(sph.id) = :layout_hole_count
+            ORDER BY ps.started_at ASC, ps.id ASC
+            """,
+            {
+                "player_id": player_id,
+                "layout_id": layout_id,
+                "layout_hole_count": layout_hole_count,
+                **year_params,
+            },
+        )
+
+        return add_cumulative_layout_averages(rows)
+
+    in_clause, in_params = make_in_clause_params("variant_id", variant_ids)
+
+    rows = fetch_all(
+        f"""
+        SELECT
+            ps.id AS round_id,
+            ps.started_at,
+            ps.course_id,
+            c.name AS course_name,
+            :layout_id AS layout_id,
+            :layout_name AS layout_name,
+            SUM(sph.throws_count) AS throws,
+            SUM(sph.par_snapshot) AS par,
+            SUM(sph.throws_count - sph.par_snapshot) AS relative_to_par,
+            COUNT(sph.id) AS hole_count
+        FROM session_player sp
+        INNER JOIN play_session ps
+            ON ps.id = sp.play_session_id
+        INNER JOIN course c
+            ON c.id = ps.course_id
+        INNER JOIN session_player_hole sph
+            ON sph.session_player_id = sp.id
+        WHERE sp.player_id = :player_id
+          AND ps.status = 'completed'
+          AND sp.approval_state = 'approved'
+          AND sph.throws_count IS NOT NULL
+          AND sph.hole_variant_id IN ({in_clause})
+          {year_filter_sql}
+        GROUP BY
+            ps.id,
+            ps.started_at,
+            ps.course_id,
+            c.name
+        HAVING COUNT(DISTINCT sph.hole_variant_id) = :layout_hole_count
+           AND COUNT(sph.id) = :layout_hole_count
+        ORDER BY ps.started_at ASC, ps.id ASC
+        """,
+        {
+            "player_id": player_id,
+            "layout_id": layout_id,
+            "layout_name": layout["layout_name"],
+            "layout_hole_count": layout_hole_count,
+            **in_params,
+            **year_params,
+        },
+    )
+
+    return add_cumulative_layout_averages(rows)
+
+
+@app.get("/stats/layouts/{layout_id}/score-distribution")
+def get_layout_score_distribution_stats(
+    layout_id: int,
+    player_id: int,
+    year: int | None = None,
+    include_longer_rounds: bool = False,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    require_player_stats_access(player_id, current_user)
+
+    get_layout_for_stats(layout_id)
+    variant_ids = get_layout_variant_ids_for_stats(layout_id)
+    layout_hole_count = len(variant_ids)
+
+    year_filter_sql, year_params = make_optional_year_filter(year)
+
+    if not include_longer_rounds:
+        row = fetch_one(
+            f"""
+            SELECT
+                COUNT(sph.id) AS total_holes,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot <= -3 THEN 1
+                    ELSE 0
+                END), 0) AS albatross_or_better,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = -2 THEN 1
+                    ELSE 0
+                END), 0) AS eagle,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = -1 THEN 1
+                    ELSE 0
+                END), 0) AS birdie,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 0 THEN 1
+                    ELSE 0
+                END), 0) AS par,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 1 THEN 1
+                    ELSE 0
+                END), 0) AS bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 2 THEN 1
+                    ELSE 0
+                END), 0) AS double_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 3 THEN 1
+                    ELSE 0
+                END), 0) AS triple_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 4 THEN 1
+                    ELSE 0
+                END), 0) AS quadruple_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot >= 5 THEN 1
+                    ELSE 0
+                END), 0) AS five_bogey_or_worse
+
+            FROM session_player sp
+            INNER JOIN play_session ps
+                ON ps.id = sp.play_session_id
+            INNER JOIN session_player_hole sph
+                ON sph.session_player_id = sp.id
+            WHERE sp.player_id = :player_id
+              AND sp.layout_id = :layout_id
+              AND ps.status = 'completed'
+              AND sp.approval_state = 'approved'
+              AND sph.throws_count IS NOT NULL
+              AND sp.id IN (
+                  SELECT sp_complete.id
+                  FROM session_player sp_complete
+                  INNER JOIN play_session ps_complete
+                      ON ps_complete.id = sp_complete.play_session_id
+                  INNER JOIN session_player_hole sph_complete
+                      ON sph_complete.session_player_id = sp_complete.id
+                  WHERE sp_complete.player_id = :player_id
+                    AND sp_complete.layout_id = :layout_id
+                    AND ps_complete.status = 'completed'
+                    AND sp_complete.approval_state = 'approved'
+                    AND sph_complete.throws_count IS NOT NULL
+                    {year_filter_sql.replace("ps.", "ps_complete.")}
+                  GROUP BY sp_complete.id
+                  HAVING COUNT(sph_complete.id) = :layout_hole_count
+              )
+              {year_filter_sql}
+            """,
+            {
+                "player_id": player_id,
+                "layout_id": layout_id,
+                "layout_hole_count": layout_hole_count,
+                **year_params,
+            },
+        )
+
+    else:
+        in_clause, in_params = make_in_clause_params("variant_id", variant_ids)
+
+        row = fetch_one(
+            f"""
+            SELECT
+                COUNT(sph.id) AS total_holes,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot <= -3 THEN 1
+                    ELSE 0
+                END), 0) AS albatross_or_better,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = -2 THEN 1
+                    ELSE 0
+                END), 0) AS eagle,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = -1 THEN 1
+                    ELSE 0
+                END), 0) AS birdie,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 0 THEN 1
+                    ELSE 0
+                END), 0) AS par,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 1 THEN 1
+                    ELSE 0
+                END), 0) AS bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 2 THEN 1
+                    ELSE 0
+                END), 0) AS double_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 3 THEN 1
+                    ELSE 0
+                END), 0) AS triple_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot = 4 THEN 1
+                    ELSE 0
+                END), 0) AS quadruple_bogey,
+
+                COALESCE(SUM(CASE
+                    WHEN sph.throws_count - sph.par_snapshot >= 5 THEN 1
+                    ELSE 0
+                END), 0) AS five_bogey_or_worse
+
+            FROM session_player sp
+            INNER JOIN play_session ps
+                ON ps.id = sp.play_session_id
+            INNER JOIN session_player_hole sph
+                ON sph.session_player_id = sp.id
+            WHERE sp.player_id = :player_id
+              AND ps.status = 'completed'
+              AND sp.approval_state = 'approved'
+              AND sph.throws_count IS NOT NULL
+              AND sph.hole_variant_id IN ({in_clause})
+              AND sp.id IN (
+                  SELECT sp_complete.id
+                  FROM session_player sp_complete
+                  INNER JOIN play_session ps_complete
+                      ON ps_complete.id = sp_complete.play_session_id
+                  INNER JOIN session_player_hole sph_complete
+                      ON sph_complete.session_player_id = sp_complete.id
+                  WHERE sp_complete.player_id = :player_id
+                    AND ps_complete.status = 'completed'
+                    AND sp_complete.approval_state = 'approved'
+                    AND sph_complete.throws_count IS NOT NULL
+                    AND sph_complete.hole_variant_id IN ({in_clause})
+                    {year_filter_sql.replace("ps.", "ps_complete.")}
+                  GROUP BY sp_complete.id
+                  HAVING COUNT(DISTINCT sph_complete.hole_variant_id) = :layout_hole_count
+                     AND COUNT(sph_complete.id) = :layout_hole_count
+              )
+              {year_filter_sql}
+            """,
+            {
+                "player_id": player_id,
+                "layout_id": layout_id,
+                "layout_hole_count": layout_hole_count,
+                **in_params,
+                **year_params,
+            },
+        )
+
+    if not row:
+        row = {}
+
+    return {
+        "player_id": player_id,
+        "layout_id": layout_id,
+        "year": year,
+        "include_longer_rounds": include_longer_rounds,
+        "total_holes": int_value(row.get("total_holes")),
+        "distribution": {
+            "albatross_or_better": int_value(row.get("albatross_or_better")),
+            "eagle": int_value(row.get("eagle")),
+            "birdie": int_value(row.get("birdie")),
+            "par": int_value(row.get("par")),
+            "bogey": int_value(row.get("bogey")),
+            "double_bogey": int_value(row.get("double_bogey")),
+            "triple_bogey": int_value(row.get("triple_bogey")),
+            "quadruple_bogey": int_value(row.get("quadruple_bogey")),
+            "five_bogey_or_worse": int_value(row.get("five_bogey_or_worse")),
+        },
+    }
+
 # =========================
 # Skapa/uppdatera/radera banor
 # =========================

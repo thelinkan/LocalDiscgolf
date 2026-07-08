@@ -50,7 +50,7 @@ def ensure_user(cur, username, email, role, password_hash):
     cur.execute(
         """
         INSERT INTO user_account (email, username, password_hash, role, is_active, must_change_password)
-        VALUES (%s, %s, %s, %s, TRUE)
+        VALUES (%s, %s, %s, %s, TRUE, TRUE)
         ON DUPLICATE KEY UPDATE
             email = VALUES(email),
             password_hash = VALUES(password_hash),

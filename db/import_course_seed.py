@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 import mysql.connector
 
 

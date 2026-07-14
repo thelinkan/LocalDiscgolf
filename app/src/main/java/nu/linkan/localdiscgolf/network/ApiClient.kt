@@ -16,8 +16,34 @@ object ApiClient {
     private val gson = Gson()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    fun buildBaseUrl(host: String, port: String): String {
-        return "http://$host:$port"
+    fun buildBaseUrl(serverAddress: String, port: String = ""): String {
+        val trimmedAddress = serverAddress.trim().trimEnd('/')
+        val trimmedPort = port.trim()
+
+        val hasScheme =
+            trimmedAddress.startsWith("http://") ||
+                    trimmedAddress.startsWith("https://")
+
+        val addressWithScheme =
+            if (hasScheme) {
+                trimmedAddress
+            } else {
+                "http://$trimmedAddress"
+            }
+
+        val shouldAddPort =
+            trimmedPort.isNotBlank() &&
+                    !trimmedAddress.substringAfter("://", trimmedAddress).contains(":") &&
+                    !trimmedAddress.substringAfter("://", trimmedAddress).contains("/")
+
+        val withPort =
+            if (shouldAddPort) {
+                "$addressWithScheme:$trimmedPort"
+            } else {
+                addressWithScheme
+            }
+
+        return withPort.trimEnd('/')
     }
 
     fun login(baseUrl: String, username: String, password: String): Result<LoginResponse> {

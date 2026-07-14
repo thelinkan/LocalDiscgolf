@@ -58,7 +58,7 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(16.dp),
-                enabled = host.isNotBlank() && port.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+                enabled = host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
             ) {
                 Text("Logga in")
             }
@@ -72,7 +72,7 @@ fun LoginScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Server: $host:$port",
+                text = "Server: ${nu.linkan.localdiscgolf.network.ApiClient.buildBaseUrl(host, port)}",
                 style = MaterialTheme.typography.bodyLarge
             )
 

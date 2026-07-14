@@ -33,8 +33,14 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSave: (String, String) -> Unit
 ) {
-    var host by remember { mutableStateOf(currentHost) }
-    var port by remember { mutableStateOf(currentPort) }
+    val initialAddress =
+        if (currentPort.isBlank()) {
+            currentHost
+        } else {
+            "$currentHost:$currentPort"
+        }
+
+    var serverAddress by remember { mutableStateOf(initialAddress) }
 
     Scaffold(
         topBar = {
@@ -52,7 +58,7 @@ fun SettingsScreen(
         },
         bottomBar = {
             Button(
-                onClick = { onSave(host.trim(), port.trim()) },
+                onClick = { onSave(serverAddress.trim(), "") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
@@ -75,17 +81,12 @@ fun SettingsScreen(
             )
 
             OutlinedTextField(
-                value = host,
-                onValueChange = { host = it },
-                label = { Text("Serveradress") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = port,
-                onValueChange = { port = it },
-                label = { Text("Port") },
+                value = serverAddress,
+                onValueChange = { serverAddress = it },
+                label = { Text("API-adress") },
+                supportingText = {
+                    Text("Exempel: http://www.example.com:9500/discgolf/api")
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )

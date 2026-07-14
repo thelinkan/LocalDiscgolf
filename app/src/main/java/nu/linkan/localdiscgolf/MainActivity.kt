@@ -191,7 +191,7 @@ class MainActivity : ComponentActivity() {
                 val prefs = getSharedPreferences("api_settings", Context.MODE_PRIVATE)
 
                 var apiHost by remember { mutableStateOf(prefs.getString("host", "") ?: "") }
-                var apiPort by remember { mutableStateOf(prefs.getString("port", "8000") ?: "8000") }
+                var apiPort by remember { mutableStateOf(prefs.getString("port", "") ?: "") }
                 var authToken by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
                 var loggedInUsername by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
                 var isCheckingSavedLogin by remember { mutableStateOf(authToken.isNotBlank()) }
@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
                         return@LaunchedEffect
                     }
 
-                    if (apiHost.isBlank() || apiPort.isBlank()) {
+                    if (apiHost.isBlank()) {
                         isCheckingSavedLogin = false
                         return@LaunchedEffect
                     }
@@ -350,7 +350,6 @@ class MainActivity : ComponentActivity() {
                     onSyncReferenceData = {
                         if (
                             apiHost.isBlank() ||
-                            apiPort.isBlank() ||
                             authToken.isBlank() ||
                             loggedInUsername.isBlank()
                         ) {
@@ -411,7 +410,7 @@ class MainActivity : ComponentActivity() {
                     activity = this,
                     apiCourses = apiCourses,
                     onLoadApiCourses = {
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -449,7 +448,7 @@ class MainActivity : ComponentActivity() {
                     },
                     apiLayouts = apiLayouts,
                     onLoadApiLayouts = { courseId ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -475,7 +474,7 @@ class MainActivity : ComponentActivity() {
                     },
                     apiLayoutHoles = apiLayoutHoles,
                     onLoadApiLayoutHoles = { layoutId ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -502,7 +501,7 @@ class MainActivity : ComponentActivity() {
                     },
                     apiUserPlayers = apiUserPlayers,
                     onLoadApiUserPlayers = {
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank() || loggedInUsername.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank() || loggedInUsername.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -541,7 +540,7 @@ class MainActivity : ComponentActivity() {
                     apiStatsCourseId = apiStatsCourseId,
 
                     onLoadApiPlayerStats = { playerId, courseId ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -607,7 +606,7 @@ class MainActivity : ComponentActivity() {
                     onLoadApiRoundDetail = { roundId ->
                         apiRoundDetail = null
 
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -633,7 +632,7 @@ class MainActivity : ComponentActivity() {
                     },
                     apiNewRoundLayouts = apiNewRoundLayouts,
                     onLoadApiNewRoundLayouts = { courseId ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -658,7 +657,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onCreateApiRound = { courseId, layoutId, playerIds, onCreated ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(this@MainActivity, "Logga in och ange server först", Toast.LENGTH_SHORT).show()
                         } else {
                             lifecycleScope.launch {
@@ -704,7 +703,7 @@ class MainActivity : ComponentActivity() {
                     },
                     apiCurrentRound = apiCurrentRound,
                     onLoadApiRoundHole = { roundId, sequenceNumber ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -740,7 +739,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onSaveApiHole = { roundId, sequenceNumber, values, onSaved ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -785,7 +784,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onCompleteApiRound = { roundId, onCompleted ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -834,7 +833,7 @@ class MainActivity : ComponentActivity() {
                     apiInProgressRounds = apiInProgressRounds,
 
                     onLoadApiInProgressRounds = {
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -864,7 +863,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onSyncRounds = {
-                        if (apiHost.isBlank() || apiPort.isBlank() || authToken.isBlank()) {
+                        if (apiHost.isBlank() || authToken.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -901,7 +900,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onResumeApiRound = { roundId, onResolved ->
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -1008,7 +1007,7 @@ class MainActivity : ComponentActivity() {
                         selectedApiPlayerName = playerName
                         apiPlayerRounds = emptyList()
 
-                        if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                        if (authToken.isBlank() || apiHost.isBlank()) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Logga in och ange server först",
@@ -1055,7 +1054,7 @@ class MainActivity : ComponentActivity() {
                                 onSuccess = { playSessionId ->
                                     val syncResult = if (
                                         apiHost.isNotBlank() &&
-                                        apiPort.isNotBlank() &&
+
                                         authToken.isNotBlank()
                                     ) {
                                         withContext(Dispatchers.IO) {
@@ -1182,7 +1181,7 @@ class MainActivity : ComponentActivity() {
                                     updatedAt = updatedAt
                                 )
 
-                                if (apiHost.isNotBlank() && apiPort.isNotBlank() && authToken.isNotBlank()) {
+                                if (apiHost.isNotBlank() && authToken.isNotBlank()) {
                                     roundSyncRepository.syncPendingRounds(
                                         baseUrl = ApiClient.buildBaseUrl(apiHost, apiPort),
                                         token = authToken
@@ -1238,7 +1237,7 @@ class MainActivity : ComponentActivity() {
 
                             val syncResult = if (
                                 apiHost.isNotBlank() &&
-                                apiPort.isNotBlank() &&
+
                                 authToken.isNotBlank()
                             ) {
                                 withContext(Dispatchers.IO) {
@@ -1579,7 +1578,7 @@ fun AppNavHost(
             ) {
                 val loadedRound = apiCurrentRound ?: return@LaunchedEffect
 
-                if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                if (authToken.isBlank() || apiHost.isBlank()) {
                     holeStatsByPlayerId = emptyMap()
                     return@LaunchedEffect
                 }
@@ -1698,7 +1697,7 @@ fun AppNavHost(
                 isLoadingLocalResumeRounds = true
                 localResumeRoundsError = null
 
-                val baseUrl = if (apiHost.isBlank() || apiPort.isBlank()) {
+                val baseUrl = if (apiHost.isBlank() ) {
                     null
                 } else {
                     ApiClient.buildBaseUrl(apiHost, apiPort)
@@ -2096,7 +2095,7 @@ fun AppNavHost(
             }
 
             LaunchedEffect(playSessionId, sequenceNumber, rows) {
-                if (authToken.isBlank() || apiHost.isBlank() || apiPort.isBlank()) {
+                if (authToken.isBlank() || apiHost.isBlank()) {
                     localHoleStatsByPlayerId = emptyMap()
                     return@LaunchedEffect
                 }
